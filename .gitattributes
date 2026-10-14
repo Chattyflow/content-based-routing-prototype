@@ -1,0 +1,4 @@
+# Never rewrite line endings inside documents
+*.pdf binary
+*.docx binary
+*.png binary
