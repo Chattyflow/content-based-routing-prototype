@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { handleApi } from "./api.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_MODELS, handleApi, resetCooldowns } from "./api.ts";
 
 const post = (path: string, body: unknown, env = {}) => handleApi(path, "POST", JSON.stringify(body), env);
 
@@ -44,5 +44,54 @@ describe("AI endpoints without a key", () => {
     const gateway = { OPENROUTER_API_KEY: "injected-by-netlify", OPENROUTER_BASE_URL: "https://gateway.example" };
     expect((await handleApi("/api/status", "GET", "", gateway)).body).toMatchObject({ ai: false });
     expect((await post("/api/classify", { text: "hello" }, gateway)).body).toEqual({ status: "off" });
+  });
+});
+
+describe("model fallback (fake OpenRouter, no network)", () => {
+  const env = { LLM_API_KEY: "test-key", LLM_MODEL: "busy-model,good-model,other-model" };
+  const answer = (content: string) => new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+  const chat = () => post("/api/chat", { messages: [{ role: "user", content: "hi" }] }, env);
+  let calls: string[] = [];
+
+  beforeEach(() => {
+    resetCooldowns();
+    calls = [];
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("moves on from a busy model and skips it on the next request", async () => {
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      const model = JSON.parse(String(init.body)).model as string;
+      calls.push(model);
+      return model === "busy-model" ? new Response("{}", { status: 429 }) : answer(`hello from ${model}`);
+    });
+    expect((await chat()).body).toEqual({ status: "ok", reply: "hello from good-model", model: "good-model" });
+    expect(calls).toEqual(["busy-model", "good-model"]);
+    calls = [];
+    await chat();
+    expect(calls).toEqual(["good-model"]); // busy-model is cooling down, so it is tried last
+  });
+
+  it("says so when every model is busy", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 429 }));
+    const pending = chat();
+    await vi.runAllTimersAsync();
+    expect((await pending).body).toEqual({ status: "error", message: "All models are busy (rate-limited). Try again shortly." });
+    vi.useRealTimers();
+  });
+
+  it("stops at once when the key is rejected", async () => {
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      calls.push(JSON.parse(String(init.body)).model);
+      return new Response("{}", { status: 401 });
+    });
+    expect((await chat()).body).toEqual({ status: "error", message: "OpenRouter rejected the API key (HTTP 401)." });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("ships with the tested free models by default", () => {
+    expect(DEFAULT_MODELS.length).toBeGreaterThanOrEqual(8);
+    expect(DEFAULT_MODELS.every((m) => m.endsWith(":free"))).toBe(true);
   });
 });

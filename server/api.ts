@@ -32,46 +32,98 @@ function settings(env: Env) {
     key: env.AI_API_KEY || env.LLM_API_KEY || "",
     baseUrl: (env.AI_BASE_URL || env.LLM_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/$/, ""),
     // Several models, comma-separated: the next one is tried if one fails.
-    models: (env.AI_MODEL || env.LLM_MODEL || "nvidia/nemotron-3-super-120b-a12b:free,poolside/laguna-s-2.1:free").split(",").map((m) => m.trim()).filter(Boolean),
+    models: (env.AI_MODEL || env.LLM_MODEL || DEFAULT_MODELS.join(",")).split(",").map((m) => m.trim()).filter(Boolean),
   };
 }
 
 /**
- * One completion. Free models share rate limits with everyone, so each model is
- * tried once, and models that were only busy (HTTP 429) get a second pass.
+ * Free OpenRouter models that returned valid JSON for the AI check in a test on
+ * 2026-10-15, fast and capable first; small or slow ones last. Free models come
+ * and go: see https://openrouter.ai/models?q=free
+ */
+export const DEFAULT_MODELS = [
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "cohere/north-mini-code:free",
+  "poolside/laguna-s-2.1:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "google/gemma-4-31b-it:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "poolside/laguna-xs-2.1:free",
+  "dots-studio/dots-3-note-preview:free",
+  "liquid/lfm-2.5-2.6b:free",
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+];
+
+/** Total time for one request: stays inside Netlify's 60-second function limit. */
+const BUDGET_MS = 40_000;
+const PER_CALL_MS = 20_000;
+// A model that just failed is tried last for a while, so the next request does
+// not wait for it again: briefly when busy or slow, longer when it refuses us.
+const COOLDOWN_MS = { busy: 60_000, refused: 10 * 60_000 };
+const cooldownUntil = new Map<string, number>();
+export const resetCooldowns = () => cooldownUntil.clear();
+
+/**
+ * One completion. Free models share rate limits with everyone, so models are
+ * tried in turn, and those that were only busy (HTTP 429) get a second pass if
+ * time allows.
  */
 async function complete(env: Env, messages: Message[], temperature: number, accept: (content: string) => boolean): Promise<{ content: string; model: string } | { error: string }> {
   const { key, baseUrl, models } = settings(env);
-  let busy = models;
+  const start = Date.now();
+  const left = () => BUDGET_MS - (Date.now() - start);
+  const cool = (model: string, ms: number) => cooldownUntil.set(model, Date.now() + ms);
+  const ready = models.filter((m) => (cooldownUntil.get(m) ?? 0) <= Date.now());
+  let queue = [...ready, ...models.filter((m) => !ready.includes(m))];
   let error = "No model answered.";
-  for (let pass = 0; pass < 2 && busy.length; pass++) {
-    if (pass) await new Promise((r) => setTimeout(r, 2500));
-    const stillBusy: string[] = [];
-    for (const model of busy) {
+  let tried = 0;
+  let busyCount = 0;
+  for (let pass = 0; pass < 2 && queue.length; pass++) {
+    if (pass) {
+      if (left() < 8_000) break;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    const busy: string[] = [];
+    for (const model of queue) {
+      if (left() < 3_000) break;
+      if (!pass) tried++;
       try {
         const r = await fetch(`${baseUrl}/chat/completions`, {
           method: "POST",
           headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "Content-Based Routing prototype" },
           body: JSON.stringify({ model, temperature, messages }),
-          signal: AbortSignal.timeout(20_000),
+          signal: AbortSignal.timeout(Math.min(PER_CALL_MS, left())),
         });
         if (!r.ok) {
           error = `${model} answered HTTP ${r.status}.`;
-          if (r.status === 429) stillBusy.push(model);
+          if (r.status === 429) {
+            busy.push(model);
+            if (!pass) busyCount++;
+            cool(model, COOLDOWN_MS.busy);
+          } else if (r.status === 401) {
+            return { error: "OpenRouter rejected the API key (HTTP 401)." };
+          } else {
+            cool(model, COOLDOWN_MS.refused);
+          }
           continue;
         }
         const data = (await r.json()) as { choices?: { message?: { content?: string } }[] };
         // The chat shows plain text: drop Markdown bold and headings if a model uses them anyway.
         const content = (data.choices?.[0]?.message?.content ?? "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#{1,6}\s+/gm, "").trim();
-        if (accept(content)) return { content, model };
+        if (accept(content)) {
+          cooldownUntil.delete(model);
+          return { content, model };
+        }
         error = `${model} gave an unusable answer.`;
+        cool(model, COOLDOWN_MS.busy);
       } catch {
         error = `${model} did not answer in time.`;
+        cool(model, COOLDOWN_MS.busy);
       }
     }
-    busy = stillBusy;
+    queue = busy;
   }
-  return { error: busy.length === models.length ? "All models are busy (rate-limited). Try again shortly." : error };
+  return { error: tried > 0 && busyCount === tried ? "All models are busy (rate-limited). Try again shortly." : error };
 }
 
 async function aiClassify(env: Env, text: string): Promise<AiCheck> {
