@@ -27,7 +27,9 @@ const MAX_CHARS = 8000;
 
 function settings(env: Env) {
   return {
-    key: env.AI_API_KEY || env.OPENROUTER_API_KEY || env.LLM_API_KEY || "",
+    // Only your own key. OPENROUTER_API_KEY is deliberately ignored: on Netlify the
+    // AI Gateway injects it, and using it would spend the team's Netlify credits.
+    key: env.AI_API_KEY || env.LLM_API_KEY || "",
     baseUrl: (env.AI_BASE_URL || env.LLM_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/$/, ""),
     // Several models, comma-separated: the next one is tried if one fails.
     models: (env.AI_MODEL || env.LLM_MODEL || "nvidia/nemotron-3-super-120b-a12b:free,poolside/laguna-s-2.1:free").split(",").map((m) => m.trim()).filter(Boolean),

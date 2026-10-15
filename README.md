@@ -63,11 +63,15 @@ It returns the tier (`green`, `orange` or `red`), a one-line reason, detected ca
 
 ## Host it on Netlify
 
+Live: https://content-based-routing.netlify.app
+
 `netlify.toml` builds the site and deploys `netlify/functions/api.ts`, which serves the same `/api/*` endpoints as the local dev server (`server/api.ts`).
 
 1. Create a Netlify site from this repository (build settings come from `netlify.toml`).
 2. In **Site configuration → Environment variables**, add `LLM_API_KEY` (your OpenRouter key) and optionally `LLM_MODEL`, then redeploy. Without them the site works on the rules and canned replies.
 3. The API is rate-limited to 30 requests per minute per visitor, so a public link cannot use up the key's quota as quickly. Use test data only.
+
+Netlify's AI Gateway injects its own `OPENROUTER_API_KEY` into every site. The app ignores it on purpose: gateway calls are paid in Netlify credits, which on the Free plan also cover bandwidth and builds.
 
 ## Existing vs new
 

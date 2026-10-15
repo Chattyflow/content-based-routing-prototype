@@ -39,4 +39,10 @@ describe("AI endpoints without a key", () => {
     expect((await post("/api/classify", { text: "hello" })).body).toEqual({ status: "off" });
     expect((await post("/api/chat", { messages: [{ role: "user", content: "hello" }] })).body).toEqual({ status: "off" });
   });
+
+  it("ignore the OPENROUTER_API_KEY that Netlify's AI Gateway injects", async () => {
+    const gateway = { OPENROUTER_API_KEY: "injected-by-netlify", OPENROUTER_BASE_URL: "https://gateway.example" };
+    expect((await handleApi("/api/status", "GET", "", gateway)).body).toMatchObject({ ai: false });
+    expect((await post("/api/classify", { text: "hello" }, gateway)).body).toEqual({ status: "off" });
+  });
 });
