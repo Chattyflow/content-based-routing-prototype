@@ -101,6 +101,7 @@ async function complete(env: Env, messages: Message[], temperature: number, acce
   let error = "No model answered.";
   let tried = 0;
   let busyCount = 0;
+  let reason = "";
   for (let pass = 0; pass < 2 && queue.length; pass++) {
     if (pass) {
       if (left() < 8_000) break;
@@ -118,7 +119,10 @@ async function complete(env: Env, messages: Message[], temperature: number, acce
           signal: AbortSignal.timeout(Math.min(PER_CALL_MS, left())),
         });
         if (!r.ok) {
-          error = `${model} answered HTTP ${r.status}.`;
+          // OpenRouter says why (shared pool busy, daily free limit, ...): keep it for the admin view.
+          const detail = await r.text().then((t) => String(JSON.parse(t)?.error?.message ?? "")).catch(() => "");
+          if (detail) reason = detail.slice(0, 160);
+          error = `${model} answered HTTP ${r.status}${detail ? `: ${detail.slice(0, 160)}` : ""}.`;
           if (r.status === 429) {
             busy.push(model);
             if (!pass) busyCount++;
@@ -146,7 +150,7 @@ async function complete(env: Env, messages: Message[], temperature: number, acce
     }
     queue = busy;
   }
-  return { error: tried > 0 && busyCount === tried ? "All models are busy (rate-limited). Try again shortly." : error };
+  return { error: tried > 0 && busyCount === tried ? `All models are busy (rate-limited)${reason ? `: ${reason}` : ""}. Try again shortly.` : error };
 }
 
 async function aiClassify(env: Env, text: string): Promise<AiCheck> {
