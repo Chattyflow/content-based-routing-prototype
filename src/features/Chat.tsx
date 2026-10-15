@@ -4,8 +4,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
 import type { PolicyCategory, User } from "../types";
+import { mergeAi, runAiCheck } from "../lib/aiCheck";
+import { runAiChat } from "../lib/aiChat";
+import { buildConversation } from "../lib/conversation";
 import { classify } from "../lib/classifier";
-import { maskTexts, unmask } from "../lib/pii";
+import { unmask } from "../lib/pii";
 import { mockReply } from "../lib/mockAi";
 import { route } from "../lib/router";
 import { DEMO_PROMPTS, PEOPLE } from "../store/seed";
@@ -14,6 +17,7 @@ import { actions, getState, useStore } from "../store/store";
 export function Chat({ user, adminView }: { user: User; adminView: boolean }) {
   const s = useStore();
   const [text, setText] = useState("");
+  const [pending, setPending] = useState<string | null>(null); // sent, being checked
   const bottom = useRef<HTMLDivElement>(null);
   const items = s.chat.filter((c) => c.userId === user.id);
 
@@ -21,15 +25,20 @@ export function Chat({ user, adminView }: { user: User; adminView: boolean }) {
   // and an effect must not return anything but a cleanup function.
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [items.length, items.at(-1)?.reply]);
+  }, [items.length, items.at(-1)?.reply, pending]);
 
-  const send = () => {
+  const send = async () => {
     const input = text.trim();
-    if (!input) return;
-    const classification = classify(input, PEOPLE);
+    if (!input || pending) return;
+    setText("");
+    setPending(input);
+    // Rules first, then the optional AI check, which can only add protection.
+    const classification = mergeAi(classify(input, PEOPLE), await runAiCheck(input), input, PEOPLE);
+    setPending(null);
     const decision = route(classification, getState().policies[user.team]);
-    const mask = decision.masked ? maskTexts([input], PEOPLE) : undefined;
-    const sentText = mask ? mask.masked[0] : input;
+    const history = items.map((c) => ({ text: c.text, reply: c.reply, tier: s.details[c.id]?.decision.tier ?? "green", extra: s.details[c.id]?.classification.extra }));
+    const { messages, mask, contextTurns } = buildConversation(history, input, decision, PEOPLE, classification.extra);
+    const sentText = messages.at(-1)!.content;
     const id = crypto.randomUUID().slice(0, 8);
     const categories: PolicyCategory[] = [...(classification.personal.length ? ["personal" as const] : []), ...classification.detected];
 
@@ -40,12 +49,14 @@ export function Chat({ user, adminView }: { user: User; adminView: boolean }) {
         routedTier: decision.tier, model: decision.model.label, reason: decision.reason,
         confidence: classification.confidence, lowConfidence: decision.lowConfidence,
       },
-      { text: input, classification, decision, mask, sentText },
+      { text: input, classification, decision, mask, sentText, contextTurns },
     );
-    setText("");
     // The model answers what it received; masked values are put back for the employee.
-    const raw = mockReply(sentText);
-    setTimeout(() => actions.answer(id, mask ? unmask(raw, mask.restore) : raw), 700 + Math.random() * 500);
+    // Without an AI key (or if the model fails), a canned demo reply stands in.
+    const answer = await runAiChat(messages);
+    if (answer.status !== "ok") await new Promise((r) => setTimeout(r, 500 + Math.random() * 400));
+    const raw = answer.status === "ok" ? answer.reply : mockReply(sentText);
+    actions.answer(id, mask ? unmask(raw, mask.restore) : raw, answer);
   };
 
   return (
@@ -59,7 +70,13 @@ export function Chat({ user, adminView }: { user: User; adminView: boolean }) {
             </div>
           </li>
         ))}
-        {!items.length && (
+        {pending && (
+          <li className="space-y-2">
+            <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-slate-900 px-3 py-2 text-sm whitespace-pre-wrap text-white">{pending}</p>
+            <div className="w-fit rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-400 shadow-xs">Writing…</div>
+          </li>
+        )}
+        {!items.length && !pending && (
           <li className="py-16 text-center">
             <p className="text-lg font-medium text-slate-800">How can I help, {user.name.split(" ")[0]}?</p>
             <p className="mt-1 text-sm text-slate-500">Just ask. Your workspace takes care of the rest.</p>
@@ -86,9 +103,9 @@ export function Chat({ user, adminView }: { user: User; adminView: boolean }) {
             placeholder="Ask anything…"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
           />
-          <button className="btn btn-primary h-10" disabled={!text.trim()} onClick={send} aria-label="Send">
+          <button className="btn btn-primary h-10" disabled={!text.trim() || !!pending} onClick={send} aria-label="Send">
             <Send className="size-4" aria-hidden />
           </button>
         </div>

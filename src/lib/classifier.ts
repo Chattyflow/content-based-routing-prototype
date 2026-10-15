@@ -7,8 +7,9 @@
 //   English and German. A category's score is the sum of its fired rules,
 //   capped at 1; it counts as detected from DETECT_AT.
 
-import type { ConfidentialCategory } from "../types";
-import { detect, type KnownPerson, type PiiKind, type PiiMatch } from "./pii";
+import type { ConfidentialCategory } from "../types.ts";
+import type { AiCheck } from "./aiCheck.ts";
+import { detect, type KnownPerson, type PiiExtra, type PiiKind, type PiiMatch } from "./pii.ts";
 
 export const DETECT_AT = 0.5;
 
@@ -96,6 +97,10 @@ export interface Classification {
   /** How sure the classifier is about its own verdict (0..1). */
   confidence: number;
   timeMs: number;
+  /** Result of the optional AI check, when it ran. */
+  ai?: AiCheck;
+  /** Personal data only the AI check found, to be masked as well. */
+  extra?: PiiExtra[];
 }
 
 export function classify(text: string, people: KnownPerson[] = []): Classification {

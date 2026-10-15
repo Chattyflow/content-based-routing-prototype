@@ -21,8 +21,19 @@ export function DecisionSummary({ d }: { d: RoutingDetail }) {
 export function DecisionDetail({ d, threshold }: { d: RoutingDetail; threshold: number }) {
   const c = d.classification;
   const hits = c.categories.filter((x) => x.fired.length);
+  const ai = c.ai;
   return (
     <div className="space-y-3 text-sm">
+      <div>
+        <div className="text-xs font-semibold text-slate-500">AI check</div>
+        {ai?.status === "ok" ? (
+          <p>{ai.finding.summary || "Done."} <span className="text-xs text-slate-500">({ai.finding.model}, confidence {Math.round(ai.finding.confidence * 100)}%{c.extra?.length ? `, found ${c.extra.length} personal item${c.extra.length === 1 ? "" : "s"}` : ""})</span></p>
+        ) : ai?.status === "error" ? (
+          <p className="text-amber-800">Unavailable: {ai.message} Rules only.</p>
+        ) : (
+          <p className="text-slate-500">Off. Rules only. Add an OpenRouter key to .env to turn it on.</p>
+        )}
+      </div>
       <div>
         <div className="text-xs font-semibold text-slate-500">Personal data</div>
         <p>{c.personal.length ? `${describeMasking(c.personalCounts)} found` : "None found"}</p>
@@ -56,7 +67,15 @@ export function DecisionDetail({ d, threshold }: { d: RoutingDetail; threshold: 
           <p className="mt-1 rounded-lg bg-amber-50 p-2 font-mono text-xs whitespace-pre-wrap">{d.sentText}</p>
         </div>
       )}
-      <p className="text-xs text-slate-500">Classified in ~40 ms on EU infrastructure (simulated).</p>
+      <div>
+        <div className="text-xs font-semibold text-slate-500">Answer</div>
+        <p>{!d.answer ? "Being written…" : d.answer.status === "ok" ? `Written by ${d.answer.model} via OpenRouter, standing in for ${d.decision.tier === "green" ? "the EU-hosted open-weight model" : d.decision.model.label.split(" · ")[0]}.` : `Canned demo reply (${d.answer.status === "off" ? "no AI key" : d.answer.message}).`}</p>
+        <p className="text-xs text-slate-500">
+          Context: {d.contextTurns ? `${d.contextTurns} earlier turn${d.contextTurns === 1 ? "" : "s"} sent along${d.decision.masked ? ", masked the same way" : ""}.` : "none."}
+          {d.decision.tier !== "green" && " Turns kept on GREEN are never sent to an external model."}
+        </p>
+      </div>
+      <p className="text-xs text-slate-500">Rules: ~40 ms on EU infrastructure (simulated).{ai?.status === "ok" ? " AI check: via OpenRouter, standing in for a model on EU servers." : ""}</p>
     </div>
   );
 }

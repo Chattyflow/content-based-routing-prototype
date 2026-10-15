@@ -5,6 +5,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { AuditEntry, Policy, TeamId } from "../types";
+import type { AiAnswer } from "../lib/aiChat";
 import type { Classification } from "../lib/classifier";
 import type { MaskResult } from "../lib/pii";
 import type { Decision } from "../lib/router";
@@ -22,7 +23,9 @@ export interface RoutingDetail {
   classification: Classification;
   decision: Decision;
   mask?: MaskResult;
-  sentText: string; // exactly what the model received
+  sentText: string; // exactly what the model received (the new message)
+  contextTurns: number; // earlier turns sent along as context
+  answer?: AiAnswer; // how the reply was written: a real model, or the canned demo reply
 }
 
 interface Saved {
@@ -74,6 +77,11 @@ export const actions = {
   setPolicy: (team: TeamId, policy: Policy) => set({ ...state, policies: { ...state.policies, [team]: policy } }),
   ask: (item: ChatItem, entry: AuditEntry, detail: RoutingDetail) =>
     set({ ...state, chat: [...state.chat, item], audit: [...state.audit, entry], details: { ...state.details, [entry.id]: detail } }),
-  answer: (id: string, reply: string) => set({ ...state, chat: state.chat.map((c) => (c.id === id ? { ...c, reply } : c)) }),
+  answer: (id: string, reply: string, answer?: AiAnswer) =>
+    set({
+      ...state,
+      chat: state.chat.map((c) => (c.id === id ? { ...c, reply } : c)),
+      details: state.details[id] ? { ...state.details, [id]: { ...state.details[id], answer } } : state.details,
+    }),
   reset: () => set({ ...fresh(), chat: [], details: {} }),
 };

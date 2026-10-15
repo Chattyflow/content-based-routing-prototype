@@ -38,7 +38,9 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. All data is fictional. **Reset demo** (top right of the tabs) puts the rules and the routing log back to the start.
+Open http://localhost:5173. All data is fictional.
+
+**Optional real AI.** To let a language model check each request next to the rules, and to get real chat answers instead of the canned demo replies, copy `.env.example` to `.env` and add an [OpenRouter](https://openrouter.ai) key, then restart `npm run dev`. The key stays in `.env` on your machine (gitignored) and is used only by the local dev server, never in the browser. Without a key, everything works on the rules and canned replies. Use test data only: messages go to the model. Free models (`:free`) share rate limits with everyone, so `LLM_MODEL` takes a comma-separated list; when one is busy, the next is tried, and if all are busy the admin view says so and the canned reply stands in. **Reset demo** (top right of the tabs) puts the rules and the routing log back to the start.
 
 ```bash
 npm test          # every demo prompt routes as expected, admin rules, masking
@@ -74,9 +76,11 @@ Simple, deterministic and explainable, so every decision can be traced:
 - **Personal data:** regular expressions for emails, phone numbers, IBANs (with checksum), other bank account numbers (labelled, or 12 to 24 digits in a row), dates of birth and tax IDs. Names are found from context: after a title (Mr., Mrs., Dr., Herr, Frau), after cue words ("my name is", "named", "patient", "customer"), or a common first name followed by a surname. The demo's fictional people are always recognised, and every mention of the same person gets the same placeholder.
 - **Confidential content:** weighted keyword and pattern rules per category, in English and German: for example code blocks (+0.4), strings that look like API keys (+0.8), "Vertragsstrafe" (+0.7), "NDA" (+0.6), "Gehalt"/"salary" (+0.6), "merger" (+0.7), "Kündigung" (+0.5). A category's score is the sum of its rules, and it counts as detected from 0.5.
 - **Confidence:** high when a category is clearly detected, or when nothing fires at all. Weak signals that don't add up to a detection give low confidence, and that is when the router plays safe.
+- **AI check (optional):** a model gets the message and returns the personal data and categories it sees, as JSON. It can only add protection: values it reports are masked only if they really occur in the text, a category counts if its confidence is 0.5 or more, and nothing the rules found is ever removed. If the two disagree, the lower confidence wins, so the router plays safe. If the check is off, slow or rate-limited, the rules decide alone and the admin view says so. In production, this would be a small model on the vendor's EU servers; here it runs through OpenRouter.
+- **Answers (optional):** the conversation goes to the model the router chose (here a model on OpenRouter stands in for it). For ORANGE, the new message and earlier turns are masked together, so a person keeps the same placeholder for the whole chat; the reply is unmasked only on the employee's screen. A turn that was kept on GREEN is never sent to an external model later as context.
 - **Routing:** the strictest admin action among everything detected wins (keep on GREEN, mask for ORANGE, allow any model).
 
-Code: `src/lib/classifier.ts` and `src/lib/router.ts`, tested in `src/lib/routing.test.ts`.
+Code: `src/lib/classifier.ts`, `src/lib/aiCheck.ts`, `src/lib/router.ts`, `src/lib/conversation.ts` and `server/aiPlugin.ts`, tested in `src/lib/routing.test.ts`, `src/lib/aiCheck.test.ts` and `src/lib/conversation.test.ts`.
 
 ## Success metrics
 

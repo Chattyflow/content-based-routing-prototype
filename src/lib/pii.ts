@@ -11,6 +11,12 @@ export interface PiiMatch {
   end: number;
 }
 
+/** Personal data found elsewhere (the AI check), masked wherever it appears. */
+export interface PiiExtra {
+  kind: PiiKind;
+  value: string;
+}
+
 export interface KnownPerson {
   id: string;
   name: string; // "Lena Hoffmann"
@@ -138,7 +144,7 @@ function nameVariants(people: KnownPerson[]) {
   return out.sort((a, b) => b.text.length - a.text.length);
 }
 
-export function detect(text: string, people: KnownPerson[] = []): (PiiMatch & { personId?: string })[] {
+export function detect(text: string, people: KnownPerson[] = [], extra: PiiExtra[] = []): (PiiMatch & { personId?: string })[] {
   const found: (PiiMatch & { personId?: string })[] = [];
   const add = (kind: PiiKind, value: string, start: number, personId?: string) => {
     const end = start + value.length;
@@ -163,6 +169,11 @@ export function detect(text: string, people: KnownPerson[] = []): (PiiMatch & { 
     if (digits.length >= 9 && digits.length <= 15) add("PHONE", m[0].trim(), m.index!);
   }
   for (const m of text.matchAll(LONG_NUMBER)) add("ACCOUNT", m[0], m.index!);
+  // Only values that really occur in the text are masked, so a model cannot invent any.
+  for (const x of [...extra].sort((a, b) => b.value.length - a.value.length)) {
+    const re = new RegExp(`(?<![\\p{L}\\d])${escapeRegex(x.value)}(?![\\p{L}\\d])`, "giu");
+    for (const m of text.matchAll(re)) add(x.kind, m[0], m.index!, x.kind === "NAME" ? `found:${x.value}` : undefined);
+  }
   return found.sort((a, b) => a.start - b.start);
 }
 
@@ -175,14 +186,14 @@ export interface MaskResult {
 }
 
 /** Mask several texts with one consistent set of placeholders. */
-export function maskTexts(texts: string[], people: KnownPerson[] = []): MaskResult {
+export function maskTexts(texts: string[], people: KnownPerson[] = [], extra: PiiExtra[] = []): MaskResult {
   const counters: Record<string, number> = {};
   const byKey = new Map<string, string>();
   const restore: Record<string, string> = {};
   const matches: MaskResult["matches"] = [];
 
   const masked = texts.map((text, textIndex) => {
-    const hits = detect(text, people);
+    const hits = detect(text, people, extra);
     let out = "";
     let pos = 0;
     for (const h of hits) {
