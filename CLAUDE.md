@@ -13,5 +13,7 @@ Vite + React + TypeScript + Tailwind, no backend. See README.md for the feature 
 - Request content and routing details stay in memory for the session only; localStorage holds the user, rules and log.
 - Pricing tab: plans in `src/features/plans.ts`; every plan shows "Coming soon" and nothing can be bought.
 - Messages and calls (`src/features/messenger/`): the other person is played by a model via /api/dm (persona in `persona.ts`, personal data masked first, canned replies without a key); calls are simulated; external contacts get a confidential-content check before sending.
+- AI providers live in `server/providers.ts`: OpenRouter first, then backups switched on by their own keys; never read Netlify AI Gateway names (OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY). A daily-limit answer pauses that provider instead of retrying.
+- Visitors (`server/visits.ts`): one record per visit named day/country/random id; no cookies, no IPs, bots filtered.
 - Keep the UI simple.
 - All people and companies are fictional. The public repo must not name the company this concept was written for.

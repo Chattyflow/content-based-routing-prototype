@@ -5,6 +5,7 @@ import { TEAMS, USERS } from "../store/seed";
 import { useStore } from "../store/store";
 import { TIER, TierPill } from "../app/ui";
 import { DecisionDetail } from "./Decision";
+import { Visitors } from "./Visitors";
 
 const catLabel = (c: PolicyCategory) => (c === "personal" ? "Personal data" : CATEGORY_INFO[c].label);
 
@@ -43,6 +44,8 @@ export function RoutingLog() {
         <Stat label="Requests with personal data masked" value={String(masked)} hint={`of ${audit.length} requests`} />
         <Stat label="Unsure, so played safe" value={String(playedSafe)} hint="kept on GREEN below the threshold" />
       </div>
+
+      <Visitors />
 
       <div className="card overflow-x-auto">
         <table className="w-full text-left text-sm">

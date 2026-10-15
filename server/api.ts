@@ -7,7 +7,9 @@
 //   POST /api/classify { text }          -> AiCheck  (the optional AI check next to the rules)
 //   POST /api/chat     { messages }      -> AiAnswer (a real answer for the chat)
 //   POST /api/dm       { contactId, me, turns } -> the other person's reply in Messages (prototype)
-//   GET  /api/status                     -> { ai: boolean, models, spread_over }
+//   GET  /api/status                     -> { ai: boolean, providers, models, spread_over }
+//   POST /api/visit                      -> counts one visit (no cookies, no IP; bots left out)
+//   GET  /api/visits                     -> visits per day and country, last 30 days
 
 import { AI_SYSTEM_PROMPT, aiUserMessage, mergeAi, parseAiReply, type AiCheck } from "../src/lib/aiCheck.ts";
 import { CHAT_SYSTEM_PROMPT, type AiAnswer, type ChatMessage } from "../src/lib/aiChat.ts";
@@ -17,9 +19,12 @@ import { route } from "../src/lib/router.ts";
 import { PEOPLE, PRESETS } from "../src/store/seed.ts";
 import { CONTACTS } from "../src/features/messenger/data.ts";
 import { personaPrompt, type DmAnswer, type DmRequest } from "../src/features/messenger/persona.ts";
+import { DEFAULT_MODELS, PRIMARY_MODELS, complete, pausedProviders, providersFrom } from "./providers.ts";
+import { memoryVisitStore, recordVisit, summarizeVisits, type VisitStore } from "./visits.ts";
+
+export { BACKUP_MODELS, DEFAULT_MODELS, PRIMARY_MODELS, resetCooldowns } from "./providers.ts";
 
 type Env = Record<string, string | undefined>;
-type Message = { role: "system" | "user" | "assistant"; content: string };
 export interface ApiResult {
   status: number;
   body: unknown;
@@ -28,147 +33,10 @@ export interface ApiResult {
 
 const MAX_CHARS = 8000;
 
-function settings(env: Env) {
-  const own = (env.AI_MODEL || env.LLM_MODEL || "").split(",").map((m) => m.trim()).filter(Boolean);
-  return {
-    // Only your own key. OPENROUTER_API_KEY is deliberately ignored: on Netlify the
-    // AI Gateway injects it, and using it would spend the team's Netlify credits.
-    key: env.AI_API_KEY || env.LLM_API_KEY || "",
-    baseUrl: (env.AI_BASE_URL || env.LLM_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/$/, ""),
-    // Several models, comma-separated: requests are spread over all of them.
-    ...(own.length ? { models: own, spread: own.length } : { models: DEFAULT_MODELS, spread: PRIMARY_MODELS.length }),
-  };
-}
-
-/**
- * Free OpenRouter models that returned valid JSON for the AI check in a test on
- * 2026-10-15. Free models come and go: see https://openrouter.ai/models?q=free
- *
- * Each request starts with a random model from the primary pool, so the load is
- * spread and no single model's free rate limit is hit first. The backups (slow,
- * small, or a router) are tried only when the pool is busy.
- */
-export const PRIMARY_MODELS = [
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "cohere/north-mini-code:free",
-  "poolside/laguna-s-2.1:free",
-  "nvidia/nemotron-3-ultra-550b-a55b:free",
-  "google/gemma-4-31b-it:free",
-  "google/gemma-4-26b-a4b-it:free",
-  "poolside/laguna-xs-2.1:free",
-];
-export const BACKUP_MODELS = [
-  "dots-studio/dots-3-note-preview:free",
-  "liquid/lfm-2.5-2.6b:free",
-  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-  // Last resort: OpenRouter's own router picks any free model that is available.
-  "openrouter/free",
-];
-export const DEFAULT_MODELS = [...PRIMARY_MODELS, ...BACKUP_MODELS];
-
-function shuffled<T>(items: T[]): T[] {
-  const out = [...items];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
-/** Total time for one request: stays inside Netlify's 60-second function limit. */
-const BUDGET_MS = 40_000;
-const PER_CALL_MS = 20_000;
-// A model that just failed is tried last for a while, so the next request does
-// not wait for it again: briefly when busy or slow, longer when it refuses us.
-const COOLDOWN_MS = { busy: 60_000, refused: 10 * 60_000 };
-const cooldownUntil = new Map<string, number>();
-// When OpenRouter reports the key's daily free-model limit, every model is out:
-// pause all AI calls for a while instead of spending requests on retries.
-const DAILY_LIMIT_PAUSE_MS = 15 * 60_000;
-let pausedUntil = 0;
-const dailyLimitMessage = (reason: string) => `Daily free-model limit reached on this OpenRouter key${reason ? ` (${reason})` : ""}. AI is paused for a while; rules and canned replies are used meanwhile.`;
-export const resetCooldowns = () => {
-  cooldownUntil.clear();
-  pausedUntil = 0;
-};
-
-/**
- * One completion. Free models share rate limits with everyone, so models are
- * tried in turn, and those that were only busy (HTTP 429) get a second pass if
- * time allows.
- */
-async function complete(env: Env, messages: Message[], temperature: number, accept: (content: string) => boolean): Promise<{ content: string; model: string } | { error: string }> {
-  const { key, baseUrl, models, spread } = settings(env);
-  if (Date.now() < pausedUntil) return { error: dailyLimitMessage("") };
-  const start = Date.now();
-  const left = () => BUDGET_MS - (Date.now() - start);
-  const cool = (model: string, ms: number) => cooldownUntil.set(model, Date.now() + ms);
-  // Random start within the pool spreads the load; models cooling down go last.
-  const order = [...shuffled(models.slice(0, spread)), ...models.slice(spread)];
-  const ready = order.filter((m) => (cooldownUntil.get(m) ?? 0) <= Date.now());
-  let queue = [...ready, ...order.filter((m) => !ready.includes(m))];
-  let error = "No model answered.";
-  let tried = 0;
-  let busyCount = 0;
-  let reason = "";
-  for (let pass = 0; pass < 2 && queue.length; pass++) {
-    if (pass) {
-      if (left() < 8_000) break;
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-    const busy: string[] = [];
-    for (const model of queue) {
-      if (left() < 3_000) break;
-      if (!pass) tried++;
-      try {
-        const r = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "Content-Based Routing prototype" },
-          body: JSON.stringify({ model, temperature, messages }),
-          signal: AbortSignal.timeout(Math.min(PER_CALL_MS, left())),
-        });
-        if (!r.ok) {
-          // OpenRouter says why (shared pool busy, daily free limit, ...): keep it for the admin view.
-          const detail = await r.text().then((t) => String(JSON.parse(t)?.error?.message ?? "")).catch(() => "");
-          if (detail) reason = detail.slice(0, 160);
-          // A daily limit covers every free model on the key: stop, and pause instead of retrying.
-          if (r.status === 429 && /per-day/i.test(detail)) {
-            pausedUntil = Date.now() + DAILY_LIMIT_PAUSE_MS;
-            return { error: dailyLimitMessage(reason) };
-          }
-          error = `${model} answered HTTP ${r.status}${detail ? `: ${detail.slice(0, 160)}` : ""}.`;
-          if (r.status === 429) {
-            busy.push(model);
-            if (!pass) busyCount++;
-            cool(model, COOLDOWN_MS.busy);
-          } else if (r.status === 401) {
-            return { error: "OpenRouter rejected the API key (HTTP 401)." };
-          } else {
-            cool(model, COOLDOWN_MS.refused);
-          }
-          continue;
-        }
-        const data = (await r.json()) as { choices?: { message?: { content?: string } }[] };
-        // The chat shows plain text: drop Markdown bold and headings if a model uses them anyway.
-        const content = (data.choices?.[0]?.message?.content ?? "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#{1,6}\s+/gm, "").trim();
-        if (accept(content)) {
-          cooldownUntil.delete(model);
-          return { content, model };
-        }
-        error = `${model} gave an unusable answer.`;
-        cool(model, COOLDOWN_MS.busy);
-      } catch {
-        error = `${model} did not answer in time.`;
-        cool(model, COOLDOWN_MS.busy);
-      }
-    }
-    queue = busy;
-  }
-  return { error: tried > 0 && busyCount === tried ? `All models are busy (rate-limited)${reason ? `: ${reason}` : ""}. Try again shortly.` : error };
-}
+const aiOn = (env: Env) => providersFrom(env).length > 0;
 
 async function aiClassify(env: Env, text: string): Promise<AiCheck> {
-  if (!settings(env).key) return { status: "off" };
+  if (!aiOn(env)) return { status: "off" };
   const r = await complete(
     env,
     [{ role: "system", content: AI_SYSTEM_PROMPT }, { role: "user", content: aiUserMessage(text.slice(0, MAX_CHARS)) }],
@@ -182,7 +50,7 @@ async function aiClassify(env: Env, text: string): Promise<AiCheck> {
 async function aiDm(env: Env, req: Partial<DmRequest>): Promise<DmAnswer | null> {
   const contact = CONTACTS.find((c) => c.id === req.contactId);
   if (!contact || !Array.isArray(req.turns) || !req.me?.name) return null;
-  if (!settings(env).key) return { status: "off" };
+  if (!aiOn(env)) return { status: "off" };
   const turns = req.turns
     .filter((t) => (t?.from === "me" || t?.from === "them") && typeof t.text === "string" && t.text.trim())
     .slice(-16)
@@ -197,7 +65,7 @@ async function aiDm(env: Env, req: Partial<DmRequest>): Promise<DmAnswer | null>
 }
 
 async function aiChat(env: Env, messages: ChatMessage[]): Promise<AiAnswer> {
-  if (!settings(env).key) return { status: "off" };
+  if (!aiOn(env)) return { status: "off" };
   const history = messages
     .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
     .slice(-12)
@@ -240,12 +108,34 @@ const json = (status: number, body: unknown, cors = false): ApiResult => ({
   },
 });
 
-export async function handleApi(path: string, method: string, bodyText: string, env: Env): Promise<ApiResult> {
+/** Facts about the request that only the hosting layer knows. */
+export interface RequestContext {
+  country?: string;
+  userAgent?: string;
+  visits?: VisitStore;
+}
+
+// Locally (and in tests) visits are kept in memory; Netlify passes a Blobs store.
+const localVisits = memoryVisitStore();
+
+export async function handleApi(path: string, method: string, bodyText: string, env: Env, ctx: RequestContext = {}): Promise<ApiResult> {
   const isPublic = path === "/api/v1/check";
   if (method === "OPTIONS" && isPublic) return json(204, null, true);
+  if (path === "/api/visit" && method === "POST") {
+    const counted = await recordVisit(ctx.visits ?? localVisits, { country: ctx.country, userAgent: ctx.userAgent });
+    return json(200, { counted });
+  }
+  if (path === "/api/visits") return json(200, await summarizeVisits(ctx.visits ?? localVisits));
   if (path === "/api/status") {
-    const s = settings(env);
-    return json(200, { ai: Boolean(s.key), models: s.models, spread_over: s.models.slice(0, s.spread) });
+    const providers = providersFrom(env);
+    const openrouter = providers.find((p) => p.id === "openrouter");
+    const paused = pausedProviders();
+    return json(200, {
+      ai: providers.length > 0,
+      providers: providers.map((p) => ({ name: p.name, models: p.models, paused: paused.some((x) => x.id === p.id) })),
+      models: openrouter?.models ?? DEFAULT_MODELS,
+      spread_over: openrouter ? openrouter.models.slice(0, openrouter.spread) : PRIMARY_MODELS,
+    });
   }
   if (method !== "POST") return json(405, { error: "Use POST." }, isPublic);
 
@@ -260,9 +150,13 @@ export async function handleApi(path: string, method: string, bodyText: string, 
     const text = typeof body.text === "string" ? body.text : "";
     if (!text.trim()) return json(400, { error: 'Send {"text": "..."}.' }, true);
     if (text.length > MAX_CHARS) return json(413, { error: `Text is longer than ${MAX_CHARS} characters.` }, true);
-    // Optional "ai": true adds the AI check (needs LLM_API_KEY; otherwise reported as off).
-    const ai = body.ai === true ? await aiClassify(env, text) : undefined;
-    return json(200, check(text, typeof body.policy === "string" ? body.policy : undefined, ai), true);
+    // Optional "ai": true adds the AI check (needs an AI key; otherwise reported as off).
+    // It can only make routing stricter, so it is skipped when the rules already keep the text on GREEN.
+    const policy = typeof body.policy === "string" ? body.policy : undefined;
+    const rulesOnly = check(text, policy);
+    const ai = body.ai !== true ? undefined : rulesOnly.tier === "green" && !rulesOnly.unsure ? ({ status: "skipped" } as const) : await aiClassify(env, text);
+    if (!ai) return json(200, rulesOnly, true);
+    return json(200, check(text, policy, ai), true);
   }
   if (path === "/api/classify") return json(200, await aiClassify(env, String(body.text ?? "")));
   if (path === "/api/chat") return json(200, await aiChat(env, Array.isArray(body.messages) ? (body.messages as ChatMessage[]) : []));

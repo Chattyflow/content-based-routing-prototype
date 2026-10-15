@@ -7,6 +7,7 @@ import { handleApi } from "./api.ts";
 interface Req extends AsyncIterable<Uint8Array> {
   method?: string;
   url?: string;
+  headers?: Record<string, string | string[] | undefined>;
 }
 interface Res {
   statusCode: number;
@@ -21,7 +22,8 @@ export function aiPlugin(): Plugin {
     const chunks: Uint8Array[] = [];
     if (req.method === "POST") for await (const chunk of req) chunks.push(chunk);
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
-    const r = await handleApi(path, req.method ?? "GET", await new Blob(chunks as BlobPart[]).text(), env);
+    const userAgent = String(req.headers?.["user-agent"] ?? "");
+    const r = await handleApi(path, req.method ?? "GET", await new Blob(chunks as BlobPart[]).text(), env, { userAgent });
     res.statusCode = r.status;
     for (const [k, v] of Object.entries(r.headers)) res.setHeader(k, v);
     res.end(r.body === null ? undefined : JSON.stringify(r.body));

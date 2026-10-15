@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RotateCcw, Route } from "lucide-react";
 import { AdminPanel } from "../features/AdminPanel";
 import { Admin } from "../features/Admin";
@@ -8,6 +8,7 @@ import { Pricing } from "../features/Pricing";
 import { RoutingLog } from "../features/RoutingLog";
 import { TEAMS, USERS } from "../store/seed";
 import { actions, useStore } from "../store/store";
+import { countVisit } from "../lib/visits";
 import { Avatar } from "./ui";
 
 type Tab = "chat" | "admin" | "log" | "pricing";
@@ -23,6 +24,11 @@ export function App() {
   const [tab, setTab] = useState<Tab>("chat");
   const [adminView, setAdminView] = useState(true);
   const user = USERS.find((u) => u.id === s.userId) ?? USERS[0];
+
+  // One visit per browser session, for the Visitors card (no cookies, no IP).
+  useEffect(() => {
+    countVisit();
+  }, []);
 
   return (
     <div className="min-h-screen">

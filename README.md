@@ -33,7 +33,7 @@ Routing is fully automatic. Employees see a plain chat: no model selector, no ti
 - **Show admin view** (on by default): next to the chat, how each request was routed and why.
 - **Messages**: chat and voice/video calls with colleagues and external contacts.
 - **Admin rules**: per team, what happens to each kind of content, with presets.
-- **Routing log**: every request's detected categories, tier and reason (never the content), with a dashboard.
+- **Routing log**: every request's detected categories, tier and reason (never the content), with a dashboard and a **Visitors** card.
 - **Pricing**: the same engine as an API for other products, with plans (all *Coming soon*) and a live **Try it** box.
 
 ## Run it locally
@@ -66,7 +66,9 @@ The key stays in `.env` on your machine (gitignored) and is used only by the loc
 
 The app uses free OpenRouter models (`server/api.ts`): each request starts with a random model from a pool of 7, which spreads the load, and 4 backups (slower or smaller models, then OpenRouter's free router `openrouter/free`) step in when the pool is busy. A busy model is tried last for the next minute. To use your own models, set a comma-separated `LLM_MODEL` in `.env`.
 
-Free models have limits: they are shared with everyone, and OpenRouter caps free-model requests per key per day. When the daily cap is reached, the app stops asking for 15 minutes and uses the rules and canned replies; the admin view shows OpenRouter's message. Each chat message uses two requests (check and answer), each Messages reply one.
+Free models have limits: they are shared with everyone, and OpenRouter caps free-model requests per account per day (all free models together, so switching models does not help). Each chat message uses up to two requests (the AI check is skipped when the rules already keep a request on EU servers), each Messages reply one.
+
+**Backup providers.** When OpenRouter's daily allowance is used up, the app pauses it for 15 minutes and moves on to the next provider that has a key: Groq (`GROQ_API_KEY`), Cerebras (`CEREBRAS_API_KEY`), Google AI Studio (`GOOGLE_AI_STUDIO_KEY`), Mistral (`MISTRAL_API_KEY`), or any other OpenAI-compatible provider (`BACKUP_BASE_URL`, `BACKUP_API_KEY`, `BACKUP_MODEL`). Each has its own free tier and limits; see `.env.example` and the provider's site. Only when every provider is out do the rules and canned replies take over, and the admin view says why. The key names avoid the ones Netlify's AI Gateway injects, so no Netlify credits are spent.
 
 ### Tests and build
 
@@ -74,6 +76,10 @@ Free models have limits: they are shared with everyone, and OpenRouter caps free
 npm test          # routing of every demo prompt, masking, admin rules, AI merge, API, model fallback (no network)
 npm run build     # type check + production build
 ```
+
+## Visitors
+
+The **Visitors** card (Routing log tab) shows visits in the last 30 days, per day and per country. It uses no cookies and stores no IP addresses: each browser session sends one ping, and the server keeps only the day, the country (from Netlify) and a random id. Known bots and scripts are left out, and **Don't count my visits on this browser** leaves out your own. Hosted, the records live in Netlify Blobs (`server/visits.ts`, `netlify/functions/api.ts`); locally they are kept in memory until the dev server stops.
 
 ## Messages and calls
 
@@ -104,7 +110,7 @@ Live: https://content-based-routing.netlify.app
 `netlify.toml` builds the site and deploys `netlify/functions/api.ts`, which serves the same `/api/*` endpoints as the local dev server (`server/api.ts`).
 
 1. Create a Netlify site from this repository (build settings come from `netlify.toml`).
-2. In **Site configuration → Environment variables**, add `LLM_API_KEY` (your OpenRouter key) and optionally `LLM_MODEL`, then redeploy. Without them the site works on the rules and canned replies.
+2. In **Site configuration → Environment variables**, add `LLM_API_KEY` (your OpenRouter key), and optionally backup provider keys such as `GROQ_API_KEY`, then redeploy. Without them the site works on the rules and canned replies.
 3. The API is rate-limited to 30 requests per minute per visitor, so a public link cannot use up the key's quota as quickly. Use test data only.
 
 Netlify's AI Gateway injects its own `OPENROUTER_API_KEY` into every site. The app ignores it on purpose: gateway calls are paid in Netlify credits, which on the Free plan also cover bandwidth and builds.
@@ -153,7 +159,9 @@ src/features/       Chat, admin view, admin rules, routing log, pricing
 src/features/messenger/  Messages and calls (contacts, personas, call window)
 src/lib/            Classifier, personal-data masking, router, AI check, conversation building
 src/store/          Fictional organisation, demo prompts, team policies, app state
-server/api.ts       The server side: /api/v1/check, /api/classify, /api/chat, /api/dm, /api/status
+server/api.ts       The server side: /api/v1/check, /api/classify, /api/chat, /api/dm, /api/status, /api/visit(s)
+server/providers.ts AI providers (OpenRouter, then backups), model fallback, daily-limit pauses
+server/visits.ts    Visitor counter
 server/aiPlugin.ts  Serves server/api.ts from the local dev server
 netlify/functions/  Serves server/api.ts on Netlify
 ```
@@ -162,7 +170,7 @@ netlify/functions/  Serves server/api.ts on Netlify
 
 - **"AI check: Off" in the admin view**: no key in `.env`, or the dev server was not restarted after adding it.
 - **"OpenRouter rejected the API key"**: the key in `.env` is wrong or was deleted; create a new one.
-- **"Daily free-model limit reached"**: the key used up its free requests for the day. Wait for OpenRouter's reset, or see OpenRouter's message for options.
+- **"Daily free-model limit reached"**: OpenRouter's free allowance is used up for the day. Add a backup provider key (see above), wait for OpenRouter's reset, or see OpenRouter's message for options.
 - **Video call says "Camera not available"**: the browser blocked the camera; allow it for the site.
 - **Port 5173 in use**: Vite picks the next free port and prints the address.
 

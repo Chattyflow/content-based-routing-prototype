@@ -90,7 +90,7 @@ describe("model fallback (fake OpenRouter, no network)", () => {
       calls.push(JSON.parse(String(init.body)).model);
       return new Response("{}", { status: 401 });
     });
-    expect((await chat()).body).toEqual({ status: "error", message: "OpenRouter rejected the API key (HTTP 401)." });
+    expect((await chat()).body).toMatchObject({ status: "error", message: expect.stringMatching(/^OpenRouter rejected the API key \(HTTP 401\)\./) });
     expect(calls).toHaveLength(1);
   });
 
@@ -198,5 +198,45 @@ describe("daily free-model limit (fake OpenRouter)", () => {
     expect(calls).toBe(1);
     await post("/api/classify", { text: "hello" }, env);
     expect(calls).toBe(1); // paused: no further requests
+  });
+});
+
+describe("backup AI providers (fake APIs, no network)", () => {
+  const ok = (content: string) => new Response(JSON.stringify({ choices: [{ message: { content } }] }));
+  const dailyLimit = () => new Response(JSON.stringify({ error: { message: "Rate limit exceeded: free-models-per-day." } }), { status: 429 });
+  let hosts: string[] = [];
+  beforeEach(() => {
+    resetCooldowns();
+    hosts = [];
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("takes over when OpenRouter's daily limit is reached, and stays on the backup while it is paused", async () => {
+    vi.stubGlobal("fetch", async (url: string) => {
+      hosts.push(new URL(url).host);
+      return url.includes("openrouter.ai") ? dailyLimit() : ok("hello from Groq");
+    });
+    const env = { LLM_API_KEY: "or-key", GROQ_API_KEY: "groq-key" };
+    const first = (await post("/api/chat", { messages: [{ role: "user", content: "hi" }] }, env)).body as { status: string; reply: string; model: string };
+    expect(first).toMatchObject({ status: "ok", reply: "hello from Groq" });
+    expect(first.model).toMatch(/\(Groq\)$/);
+    expect(hosts).toEqual(["openrouter.ai", "api.groq.com"]);
+    hosts = [];
+    await post("/api/chat", { messages: [{ role: "user", content: "again" }] }, env);
+    expect(hosts).toEqual(["api.groq.com"]); // OpenRouter is paused, no wasted request
+  });
+
+  it("uses only providers that have a key, and never Netlify's injected gateway keys", async () => {
+    const status = (await handleApi("/api/status", "GET", "", {
+      MISTRAL_API_KEY: "m", OPENROUTER_API_KEY: "netlify-gateway", GEMINI_API_KEY: "netlify-gateway", OPENAI_API_KEY: "netlify-gateway",
+    })).body as { ai: boolean; providers: { name: string }[] };
+    expect(status.ai).toBe(true);
+    expect(status.providers.map((p) => p.name)).toEqual(["Mistral"]);
+  });
+
+  it("explains when every provider is out for the day", async () => {
+    vi.stubGlobal("fetch", async () => dailyLimit());
+    const r = (await post("/api/chat", { messages: [{ role: "user", content: "hi" }] }, { LLM_API_KEY: "a", GROQ_API_KEY: "b" })).body as { message: string };
+    expect(r.message).toMatch(/OpenRouter key.*Daily limit reached on Groq.*AI is paused for a while/);
   });
 });

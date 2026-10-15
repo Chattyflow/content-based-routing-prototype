@@ -20,6 +20,8 @@ export interface AiFinding {
 export type AiCheck =
   | { status: "ok"; finding: AiFinding }
   | { status: "off" }
+  /** Not asked: the rules already keep the text on GREEN, so the AI check could not change anything. */
+  | { status: "skipped" }
   | { status: "error"; message: string };
 
 const PII_KINDS: PiiKind[] = ["NAME", "EMAIL", "PHONE", "IBAN", "ACCOUNT", "TAX_ID", "DOB"];

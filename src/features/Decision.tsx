@@ -29,9 +29,11 @@ export function DecisionDetail({ d, threshold }: { d: RoutingDetail; threshold: 
         {ai?.status === "ok" ? (
           <p>{ai.finding.summary || "Done."} <span className="text-xs text-slate-500">({ai.finding.model}, confidence {Math.round(ai.finding.confidence * 100)}%{c.extra?.length ? `, found ${c.extra.length} personal item${c.extra.length === 1 ? "" : "s"}` : ""})</span></p>
         ) : ai?.status === "error" ? (
-          <p className="text-amber-800">Unavailable: {ai.message} Rules only.</p>
+          <p className="text-amber-800">Unavailable: {ai.message}</p>
+        ) : ai?.status === "skipped" ? (
+          <p className="text-slate-500">Not needed: the rules already keep this on EU servers (saves an AI request).</p>
         ) : (
-          <p className="text-slate-500">Off. Rules only. Set LLM_API_KEY (an OpenRouter key) to turn it on.</p>
+          <p className="text-slate-500">Off. Rules only. Add an AI key (LLM_API_KEY for OpenRouter) to turn it on.</p>
         )}
       </div>
       <div>
@@ -69,13 +71,13 @@ export function DecisionDetail({ d, threshold }: { d: RoutingDetail; threshold: 
       )}
       <div>
         <div className="text-xs font-semibold text-slate-500">Answer</div>
-        <p>{!d.answer ? "Being written…" : d.answer.status === "ok" ? `Written by ${d.answer.model} via OpenRouter, standing in for ${d.decision.tier === "green" ? "the EU-hosted open-weight model" : d.decision.model.label.split(" · ")[0]}.` : `Canned demo reply (${d.answer.status === "off" ? "no AI key" : d.answer.message}).`}</p>
+        <p>{!d.answer ? "Being written…" : d.answer.status === "ok" ? `Written by ${d.answer.model}, standing in for ${d.decision.tier === "green" ? "the EU-hosted open-weight model" : d.decision.model.label.split(" · ")[0]}.` : `Canned demo reply (${d.answer.status === "off" ? "no AI key" : d.answer.message}).`}</p>
         <p className="text-xs text-slate-500">
           Context: {d.contextTurns ? `${d.contextTurns} earlier turn${d.contextTurns === 1 ? "" : "s"} sent along${d.decision.masked ? ", masked the same way" : ""}.` : "none."}
           {d.decision.tier !== "green" && " Turns kept on GREEN are never sent to an external model."}
         </p>
       </div>
-      <p className="text-xs text-slate-500">Rules: ~40 ms on EU infrastructure (simulated).{ai?.status === "ok" ? " AI check: via OpenRouter, standing in for a model on EU servers." : ""}</p>
+      <p className="text-xs text-slate-500">Rules: ~40 ms on EU infrastructure (simulated).{ai?.status === "ok" ? " AI check: a free hosted model, standing in for a model on EU servers." : ""}</p>
     </div>
   );
 }

@@ -33,7 +33,12 @@ export function Chat({ user }: { user: User }) {
     setText("");
     setPending(input);
     // Rules first, then the optional AI check, which can only add protection.
-    const classification = mergeAi(classify(input, PEOPLE), await runAiCheck(input), input, PEOPLE);
+    // The AI check can only make routing stricter: when the rules already keep the
+    // request on GREEN, it is skipped to save a request.
+    const rules = classify(input, PEOPLE);
+    const rulesDecision = route(rules, getState().policies[user.team]);
+    const sure = rulesDecision.tier === "green" && !rulesDecision.lowConfidence;
+    const classification = mergeAi(rules, sure ? { status: "skipped" } : await runAiCheck(input), input, PEOPLE);
     setPending(null);
     const decision = route(classification, getState().policies[user.team]);
     const history = items.map((c) => ({ text: c.text, reply: c.reply, tier: s.details[c.id]?.decision.tier ?? "green", extra: s.details[c.id]?.classification.extra }));
