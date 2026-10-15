@@ -12,6 +12,6 @@ Vite + React + TypeScript + Tailwind, no backend. See README.md for the feature 
 - Employees must never see routing: no model selector, tier, model name or masking text in the chat. Routing details live only in the admin view (`AdminPanel.tsx`) and the Routing log.
 - Request content and routing details stay in memory for the session only; localStorage holds the user, rules and log.
 - Pricing tab: plans in `src/features/plans.ts`; every plan shows "Coming soon" and nothing can be bought.
-- Messages and calls (`src/features/messenger/`): person-to-person, never sent to AI; the other side is simulated; external contacts get a confidential-content check before sending.
+- Messages and calls (`src/features/messenger/`): the other person is played by a model via /api/dm (persona in `persona.ts`, personal data masked first, canned replies without a key); calls are simulated; external contacts get a confidential-content check before sending.
 - Keep the UI simple.
 - All people and companies are fictional. The public repo must not name the company this concept was written for.

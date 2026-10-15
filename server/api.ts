@@ -6,6 +6,7 @@
 //   POST /api/v1/check { text, policy?, ai? } -> routing decision + masked text (rules; "ai": true adds the AI check)
 //   POST /api/classify { text }          -> AiCheck  (the optional AI check next to the rules)
 //   POST /api/chat     { messages }      -> AiAnswer (a real answer for the chat)
+//   POST /api/dm       { contactId, me, turns } -> the other person's reply in Messages (prototype)
 //   GET  /api/status                     -> { ai: boolean, models, spread_over }
 
 import { AI_SYSTEM_PROMPT, aiUserMessage, mergeAi, parseAiReply, type AiCheck } from "../src/lib/aiCheck.ts";
@@ -14,6 +15,8 @@ import { CATEGORY_INFO, classify } from "../src/lib/classifier.ts";
 import { maskTexts } from "../src/lib/pii.ts";
 import { route } from "../src/lib/router.ts";
 import { PEOPLE, PRESETS } from "../src/store/seed.ts";
+import { CONTACTS } from "../src/features/messenger/data.ts";
+import { personaPrompt, type DmAnswer, type DmRequest } from "../src/features/messenger/persona.ts";
 
 type Env = Record<string, string | undefined>;
 type Message = { role: "system" | "user" | "assistant"; content: string };
@@ -157,6 +160,24 @@ async function aiClassify(env: Env, text: string): Promise<AiCheck> {
   return "error" in r ? { status: "error", message: r.error } : { status: "ok", finding: parseAiReply(r.content, r.model)! };
 }
 
+/** The other person in a Messages conversation, played by a model (prototype only). */
+async function aiDm(env: Env, req: Partial<DmRequest>): Promise<DmAnswer | null> {
+  const contact = CONTACTS.find((c) => c.id === req.contactId);
+  if (!contact || !Array.isArray(req.turns) || !req.me?.name) return null;
+  if (!settings(env).key) return { status: "off" };
+  const turns = req.turns
+    .filter((t) => (t?.from === "me" || t?.from === "them") && typeof t.text === "string" && t.text.trim())
+    .slice(-16)
+    .map((t) => ({ role: t.from === "me" ? ("user" as const) : ("assistant" as const), content: t.text.slice(0, MAX_CHARS) }));
+  if (turns.at(-1)?.role !== "user") return null;
+  const r = await complete(env, [{ role: "system", content: personaPrompt(contact, { name: String(req.me.name), role: String(req.me.role ?? "") }) }, ...turns], 0.7, (content) => content.length > 0);
+  if ("error" in r) return { status: "error", message: r.error };
+  // Models sometimes prefix the speaker's name ("Erik: ..."); the chat shows it already.
+  let reply = r.content;
+  for (const prefix of [`${contact.name}:`, `${contact.name.split(" ")[0]}:`]) if (reply.startsWith(prefix)) reply = reply.slice(prefix.length).trim();
+  return { status: "ok", reply, model: r.model };
+}
+
 async function aiChat(env: Env, messages: ChatMessage[]): Promise<AiAnswer> {
   if (!settings(env).key) return { status: "off" };
   const history = messages
@@ -227,5 +248,9 @@ export async function handleApi(path: string, method: string, bodyText: string, 
   }
   if (path === "/api/classify") return json(200, await aiClassify(env, String(body.text ?? "")));
   if (path === "/api/chat") return json(200, await aiChat(env, Array.isArray(body.messages) ? (body.messages as ChatMessage[]) : []));
+  if (path === "/api/dm") {
+    const answer = await aiDm(env, body as Partial<DmRequest>);
+    return answer ? json(200, answer) : json(400, { error: "Send a known contactId, me.name and turns ending with your message." });
+  }
   return json(404, { error: "Not found." });
 }

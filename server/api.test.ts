@@ -141,3 +141,39 @@ describe('public API with "ai": true', () => {
     expect(r.body).toMatchObject({ ai_check: { status: "off", note: "Rules only." }, tier: "orange", masked_text: "Please call [NAME_1]" });
   });
 });
+
+describe("Messages: the other person, played by a model (fake OpenRouter)", () => {
+  const env = { LLM_API_KEY: "test-key", LLM_MODEL: "m" };
+  const me = { name: "Lena Hoffmann", role: "HR Lead" };
+  const turns = [
+    { from: "them", text: "Hi! The replacement meters ship on Wednesday. Do you need the installation team as well?" },
+    { from: "me", text: "Yes please, can they come on Friday?" },
+  ];
+  let sent: { messages: { role: string; content: string }[] } | null = null;
+
+  beforeEach(() => {
+    resetCooldowns();
+    sent = null;
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Erik: Friday works, I'll book the team for 9:00." } }] }));
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("answers in character, with the whole conversation as context", async () => {
+    const r = await post("/api/dm", { contactId: "x-erik", me, turns }, env);
+    expect(r.body).toEqual({ status: "ok", reply: "Friday works, I'll book the team for 9:00.", model: "m" });
+    const system = sent!.messages[0];
+    expect(system.role).toBe("system");
+    expect(system.content).toContain("You are Erik Sandberg, Account Manager at Baltic Grid Components.");
+    expect(system.content).toContain("chatting in a work messenger with Lena Hoffmann, HR Lead at Nordwerk Energie GmbH");
+    expect(sent!.messages.slice(1).map((m) => m.role)).toEqual(["assistant", "user"]);
+  });
+
+  it("is off without a key, and rejects unknown contacts or a conversation not ending with your message", async () => {
+    expect((await post("/api/dm", { contactId: "x-erik", me, turns })).body).toEqual({ status: "off" });
+    expect((await post("/api/dm", { contactId: "nobody", me, turns }, env)).status).toBe(400);
+    expect((await post("/api/dm", { contactId: "x-erik", me, turns: turns.slice(0, 1) }, env)).status).toBe(400);
+  });
+});

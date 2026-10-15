@@ -1,14 +1,18 @@
 // Person-to-person messages and calls, with colleagues and with people outside
-// the organisation. Nothing here goes to an AI model. Sending something that
-// looks confidential to an external contact asks for a second look first.
+// the organisation. In a real product messages go to the person; in this
+// prototype the other side is played by a model (see persona.ts). Sending
+// something that looks confidential to an external contact asks for a second
+// look first.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Building2, MessageSquare, Phone, Search, Send, ShieldAlert, Video } from "lucide-react";
 import type { User } from "../../types";
 import { CATEGORY_INFO, classify } from "../../lib/classifier";
+import { maskTexts, unmask } from "../../lib/pii";
 import { PEOPLE } from "../../store/seed";
 import { Call } from "./Call";
 import { CONTACTS, ORG, SEED_UNREAD, isExternal, seedThreads, type Contact, type Message } from "./data";
+import { runDm } from "./persona";
 
 interface Conversations {
   threads: Record<string, Message[]>;
@@ -47,25 +51,41 @@ export function Messenger({ user }: { user: User }) {
     setOpenId(null);
   }, [user.id]);
 
-  const send = (contact: Contact, text: string) => {
+  const send = async (contact: Contact, text: string) => {
     const mine: Message = { id: newId(), from: "me", text, at: Date.now() };
+    const history = [...(conv.threads[contact.id] ?? []), mine].filter((m) => m.from !== "system");
     update((c) => ({ ...c, threads: { ...c.threads, [contact.id]: [...(c.threads[contact.id] ?? []), mine] } }));
     if (contact.presence === "offline") return; // they'll read it later
-    const delay = contact.presence === "away" ? 6000 : 1800;
-    setTimeout(() => setTyping(contact.id), delay / 3);
-    setTimeout(() => {
-      setTyping((t) => (t === contact.id ? null : t));
-      update((c) => {
-        const i = c.replyIndex[contact.id] ?? 0;
-        const reply: Message = { id: newId(), from: contact.id, text: contact.replies[i % contact.replies.length], at: Date.now() };
-        return {
-          ...c,
-          threads: { ...c.threads, [contact.id]: [...(c.threads[contact.id] ?? []), reply] },
-          replyIndex: { ...c.replyIndex, [contact.id]: i + 1 },
-          unread: { ...c.unread, [contact.id]: openIdRef.current === contact.id ? 0 : (c.unread[contact.id] ?? 0) + 1 },
-        };
-      });
-    }, delay);
+
+    const started = Date.now();
+    const minDelay = contact.presence === "away" ? 5000 : 1500; // nobody answers instantly
+    setTimeout(() => setTyping(contact.id), Math.min(700, minDelay / 2));
+
+    // The other side is played by a model: the whole conversation goes along, with
+    // personal data masked (except the two people talking), and comes back unmasked.
+    const people = PEOPLE.filter((p) => p.id !== contact.id && p.id !== user.id);
+    const masked = maskTexts(history.map((m) => m.text), people);
+    const answer = await runDm({
+      contactId: contact.id,
+      me: { name: user.name, role: user.role },
+      turns: history.map((m, i) => ({ from: m.from === "me" ? "me" : "them", text: masked.masked[i] })),
+    });
+    const wait = minDelay - (Date.now() - started);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+
+    setTyping((t) => (t === contact.id ? null : t));
+    update((c) => {
+      const i = c.replyIndex[contact.id] ?? 0;
+      const canned = answer.status !== "ok";
+      const replyText = canned ? contact.replies[i % contact.replies.length] : unmask(answer.reply, masked.restore);
+      const reply: Message = { id: newId(), from: contact.id, text: replyText, at: Date.now() };
+      return {
+        ...c,
+        threads: { ...c.threads, [contact.id]: [...(c.threads[contact.id] ?? []), reply] },
+        replyIndex: canned ? { ...c.replyIndex, [contact.id]: i + 1 } : c.replyIndex,
+        unread: { ...c.unread, [contact.id]: openIdRef.current === contact.id ? 0 : (c.unread[contact.id] ?? 0) + 1 },
+      };
+    });
   };
 
   const openThread = (id: string) => {
@@ -86,7 +106,7 @@ export function Messenger({ user }: { user: User }) {
           messages={conv.threads[open.id] ?? []}
           typing={typing === open.id}
           onBack={() => setOpenId(null)}
-          onSend={(text) => send(open, text)}
+          onSend={(text) => void send(open, text)}
           onCall={(video) => setCall({ contact: open, video })}
         />
       ) : (
@@ -209,6 +229,7 @@ function Thread({ contact, messages, typing, onBack, onSend, onCall }: {
       )}
 
       <ol className="flex-1 space-y-2 overflow-y-auto bg-slate-50 p-3" aria-live="polite">
+        <li className="text-center text-[11px] text-slate-400">Prototype: {contact.name.split(" ")[0]}'s replies are written by an AI model.</li>
         {messages.map((m) =>
           m.from === "system" ? (
             <li key={m.id} className="text-center text-[11px] text-slate-500">{m.text} · {clock(m.at)}</li>

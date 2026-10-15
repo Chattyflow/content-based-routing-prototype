@@ -51,9 +51,9 @@ npm run build     # type check + production build
 
 Next to the AI chat, **Messages** is a window for talking to people: colleagues in the organisation and contacts outside it (a supplier, outside counsel, a customer), with presence, unread counts, typing indicators, and voice or video calls.
 
-- Person-to-person messages never go to an AI model.
+- In a real product, messages go to the person. In this prototype, the other person is played by a model on OpenRouter (`/api/dm`), with a short background for each contact (Erik handles deliveries at the meter supplier, Tobias reviews contracts in Legal, and so on), so the conversation makes sense. Personal data in the conversation is masked before it goes to the model and put back in the reply. Without a key, canned replies stand in. The thread says so: *"Prototype: Erik's replies are written by an AI model."*
 - Before something that looks confidential (a contract, salaries, a security incident and so on) goes to an **external** contact, the sender gets a second look: *"This looks like salary or financial information. Erik Sandberg is outside Nordwerk Energie GmbH."* with **Edit message** or **Send anyway**.
-- Prototype limits: there is no messaging or calling server, so the other side's replies and call are simulated (and say so). A video call shows your own camera if the browser allows it. Real calls would need a signalling server, for example WebRTC with a hosted service.
+- Prototype limits: there is no messaging or calling server, so the other side of a call is simulated (and says so). A video call shows your own camera if the browser allows it. Real calls would need a signalling server, for example WebRTC with a hosted service.
 
 ## Pricing and the API
 
