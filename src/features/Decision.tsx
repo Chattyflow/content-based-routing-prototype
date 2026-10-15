@@ -31,7 +31,7 @@ export function DecisionDetail({ d, threshold }: { d: RoutingDetail; threshold: 
         ) : ai?.status === "error" ? (
           <p className="text-amber-800">Unavailable: {ai.message} Rules only.</p>
         ) : (
-          <p className="text-slate-500">Off. Rules only. Add an OpenRouter key to .env to turn it on.</p>
+          <p className="text-slate-500">Off. Rules only. Set LLM_API_KEY (an OpenRouter key) to turn it on.</p>
         )}
       </div>
       <div>

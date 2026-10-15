@@ -106,7 +106,8 @@ function TryApi() {
     setBusy(true);
     try {
       const r = await fetch("/api/v1/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
-      setResult(JSON.stringify(await r.json(), null, 2));
+      if (r.status === 429) setResult("Too many requests from your network. Please wait a minute and try again.");
+      else setResult(JSON.stringify(await r.json(), null, 2));
     } catch {
       setResult("The API is not reachable from this page.");
     }
