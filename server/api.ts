@@ -35,11 +35,13 @@ const MAX_CHARS = 8000;
 
 const aiOn = (env: Env) => providersFrom(env).length > 0;
 
-async function aiClassify(env: Env, text: string): Promise<AiCheck> {
+async function aiClassify(env: Env, text: string, context: unknown = []): Promise<AiCheck> {
   if (!aiOn(env)) return { status: "off" };
+  // A few earlier messages help the check understand what the new one is.
+  const earlier = (Array.isArray(context) ? context : []).filter((c): c is string => typeof c === "string" && c.trim() !== "").slice(-3).map((c) => c.slice(0, 500));
   const r = await complete(
     env,
-    [{ role: "system", content: AI_SYSTEM_PROMPT }, { role: "user", content: aiUserMessage(text.slice(0, MAX_CHARS)) }],
+    [{ role: "system", content: AI_SYSTEM_PROMPT }, { role: "user", content: aiUserMessage(text.slice(0, MAX_CHARS), earlier) }],
     0,
     (content) => parseAiReply(content, "") !== null,
   );
@@ -158,7 +160,7 @@ export async function handleApi(path: string, method: string, bodyText: string, 
     if (!ai) return json(200, rulesOnly, true);
     return json(200, check(text, policy, ai), true);
   }
-  if (path === "/api/classify") return json(200, await aiClassify(env, String(body.text ?? "")));
+  if (path === "/api/classify") return json(200, await aiClassify(env, String(body.text ?? ""), body.context));
   if (path === "/api/chat") return json(200, await aiChat(env, Array.isArray(body.messages) ? (body.messages as ChatMessage[]) : []));
   if (path === "/api/dm") {
     const answer = await aiDm(env, body as Partial<DmRequest>);

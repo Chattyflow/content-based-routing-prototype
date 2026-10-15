@@ -25,7 +25,7 @@ export const CATEGORY_INFO: Record<ConfidentialCategory, { label: string; reason
   contract_legal: { label: "Contract / legal terms", reason: "a confidential contract or legal matter" },
   financial_salary: { label: "Financial figures / salaries", reason: "salary or financial information" },
   mna_strategy: { label: "M&A / strategy", reason: "merger or strategy plans" },
-  code_secrets: { label: "Source code / secrets", reason: "source code with a secret in it" },
+  code_secrets: { label: "Passwords, codes and secrets", reason: "a password, access code or other secret" },
   security_incident: { label: "Security incident", reason: "a security incident" },
   health_data: { label: "Health / patient data", reason: "health or patient information" },
   marked_confidential: { label: "Marked confidential", reason: "a document marked confidential" },
@@ -57,6 +57,15 @@ export const RULES: Rule[] = [
   { id: "code-block", category: "code_secrets", label: "Code block", weight: 0.4, pattern: /```[\s\S]*?```/ },
   { id: "api-key", category: "code_secrets", label: "String that looks like an API key", weight: 0.8, pattern: /\b(sk|pk|rk)_(live|test)_[A-Za-z0-9]{12,}|\bAKIA[0-9A-Z]{16}\b|\bghp_[A-Za-z0-9]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
   { id: "secret-assign", category: "code_secrets", label: "Secret assigned in code", weight: 0.6, pattern: /\b(api[_-]?key|secret|password|passwort|token)\s*[:=]/i },
+  // Credentials written in a normal sentence, not just in code. A strong cue word
+  // ("Passwort", "PIN", "access code") right before a colon takes any value; after
+  // "is/ist/lautet" or with words in between, the value must look like a secret
+  // (a digit or symbol), so "the password policy is strict" does not count.
+  { id: "credential", category: "code_secrets", label: "Password / PIN / access code", weight: 0.8,
+    pattern: /(?<![\p{L}\d])(?:pass(?:wort|word|phrase)|kennwort|pin(?:-?code)?|passcode|access[ -]?code|zugangs(?:code|daten)|login[ -]?(?:code|daten)|recovery[ -]?codes?|wiederherstellungs(?:code|schlüssel)|licen[cs]e[ -]?key|lizenz(?:schlüssel|key)|(?:wlan|wifi|wi-fi)[ -]?(?:schlüssel|passwort|password|key)|secret|token|api[ -]?key)(?![\p{L}\d])(?:\s*[:=]\s*["'`„“]?[^\s"'`„“”]{4,}|[^\n]{0,30}?(?:[:=]|\s(?:is|ist|lautet)\s)(?:[^\n]{0,20}?[\s"'`„“(])?(?=[^\s"'`„“”]*[\d!@#$%^&*?_+=~-])[^\s"'`„“”]{4,})/iu },
+  // Weaker cue ("code", "Schlüssel", "login"): the value must mix letters and digits.
+  { id: "code-value", category: "code_secrets", label: "Code or key given as a value", weight: 0.6,
+    pattern: /(?<![\p{L}\d])(?:codes?|schlüssel|seriennummer|serial(?: number)?|login|zugang)(?![\p{L}\d])[^\n]{0,30}?(?:[:=]|\s(?:is|ist|lautet)\s)(?:[^\n]{0,20}?[\s"'`„“(])?(?=[^\s"'`„“”]*\d)(?=[^\s"'`„“”]*\p{L})[^\s"'`„“”]{6,}/iu },
   { id: "code-syntax", category: "code_secrets", label: "Code syntax", weight: 0.3, pattern: /\b(import \w+|def \w+\(|function \w+\(|SELECT .+ FROM)\b/ },
 
   // Security incidents

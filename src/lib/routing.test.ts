@@ -154,3 +154,40 @@ describe("health and patient data", () => {
     expect(classify("Krankmeldung von Frau Yilmaz für nächste Woche", PEOPLE).detected).toContain("health_data");
   });
 });
+
+describe("passwords, PINs and codes written in a normal sentence", () => {
+  const secret = (text: string) => classify(text, PEOPLE).detected.includes("code_secrets");
+
+  it("keeps them on GREEN, in English and German", () => {
+    for (const text of [
+      "Here is the code of my app: klooo90-kolliö-osk",
+      "Mein Passwort ist Sommerwind!",
+      "Passwort: Sommerwind",
+      "PIN: 4821",
+      "Der WLAN-Schlüssel lautet x7Gh-22kL-pq9",
+      "Zugangsdaten für das Portal: lena.h / Hx!92kd",
+      "Recovery code: 4F7K-9QPL-22MX",
+      "The access code is AB12-CD34",
+      "Lizenzschlüssel: ABCDE-12345-FGHIJ",
+      "our login is admin / Welcome2026",
+    ]) {
+      expect(secret(text), text).toBe(true);
+      expect(route(classify(text, PEOPLE), standard).tier, text).toBe("green");
+    }
+  });
+
+  it("does not treat ordinary sentences about codes or passwords as secrets", () => {
+    for (const text of [
+      "The code is ready for review.",
+      "Our project code name is Nordlicht",
+      "The password policy is strict",
+      "Can you explain what a PIN is?",
+      "Please send me the postcode of the Hamburg office",
+      "Can you review the code? It is in the file main.py",
+      "The code is 200 lines long",
+      "Write a slogan for our summer campaign",
+    ]) {
+      expect(secret(text), text).toBe(false);
+    }
+  });
+});

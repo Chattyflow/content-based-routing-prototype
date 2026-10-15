@@ -38,7 +38,11 @@ export function Chat({ user }: { user: User }) {
     const rules = classify(input, PEOPLE);
     const rulesDecision = route(rules, getState().policies[user.team]);
     const sure = rulesDecision.tier === "green" && !rulesDecision.lowConfidence;
-    const classification = mergeAi(rules, sure ? { status: "skipped" } : await runAiCheck(input), input, PEOPLE);
+    // The AI check also sees the last few messages, so it understands what this one is
+    // ("here it is: X7k9" after "I'll send you our login"). Messages kept on GREEN are
+    // left out: they must never go to an external model, not even for a check.
+    const context = items.filter((c) => s.details[c.id]?.decision.tier !== "green").slice(-3).map((c) => c.text);
+    const classification = mergeAi(rules, sure ? { status: "skipped" } : await runAiCheck(input, context), input, PEOPLE);
     setPending(null);
     const decision = route(classification, getState().policies[user.team]);
     const history = items.map((c) => ({ text: c.text, reply: c.reply, tier: s.details[c.id]?.decision.tier ?? "green", extra: s.details[c.id]?.classification.extra }));

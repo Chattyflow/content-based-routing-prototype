@@ -289,3 +289,19 @@ describe("switching back automatically when a limit resets (fake APIs)", () => {
     expect(hosts).toEqual(["openrouter.ai"]);
   });
 });
+
+describe("the AI check sees the conversation (fake API)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends up to three earlier messages as context, marked separately from the new message", async () => {
+    resetCooldowns();
+    let prompt = "";
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      prompt = JSON.parse(String(init.body)).messages[1].content;
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"personal":[],"categories":[{"category":"code_secrets","confidence":0.9,"evidence":"Tx92-mmq-bb"}],"confidence":0.9,"summary":"A login value."}' } }] }));
+    });
+    const r = await post("/api/classify", { text: "here: Tx92-mmq-bb", context: ["a", "b", "I'll send you the login for our supplier portal", 42] }, { LLM_API_KEY: "k" });
+    expect(prompt).toBe("<earlier_messages>\n- a\n- b\n- I'll send you the login for our supplier portal\n</earlier_messages>\n<message>\nhere: Tx92-mmq-bb\n</message>");
+    expect(r.body).toMatchObject({ status: "ok", finding: { categories: [{ category: "code_secrets" }] } });
+  });
+});
