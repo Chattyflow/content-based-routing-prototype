@@ -16,3 +16,6 @@ Thumbs.db
 
 # Local tool settings
 .claude/
+
+# Netlify CLI local state
+.netlify/
