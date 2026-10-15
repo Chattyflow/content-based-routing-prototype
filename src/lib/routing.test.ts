@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEMO_PROMPTS, PEOPLE, PRESETS, initialPolicies } from "../store/seed";
 import { classify } from "./classifier";
 import { maskTexts } from "./pii";
-import { MODELS, allowedTiers, manualWarning, route } from "./router";
+import { route } from "./router";
 
 const standard = PRESETS.standard.policy;
 const prompt = (id: string) => DEMO_PROMPTS.find((p) => p.id === id)!.text;
@@ -67,18 +67,27 @@ describe("admin rules", () => {
     expect(route(c, lenient).tier).toBe("orange");
     expect(route(c, standard).tier).toBe("green");
   });
-
-  it("overrides only offer RED when the admin allows it", () => {
-    expect(allowedTiers(standard)).toEqual(["green", "orange"]);
-    expect(allowedTiers({ ...standard, redAllowed: true })).toContain("red");
-  });
 });
 
-describe("manual mode (today)", () => {
-  it("warns when the contract would leave EU infrastructure", () => {
-    const claude = MODELS.find((m) => m.id === "claude")!;
-    expect(manualWarning(decide("contract"), claude)).toBe("Without routing, this contract would have left EU infrastructure.");
-    expect(manualWarning(decide("slogan"), claude)).toBeNull();
+describe("bank account numbers", () => {
+  it("masks a number labelled as an IBAN even when it is not a valid IBAN", () => {
+    const text = "Here is my IBAN: 97283638882900186538";
+    const c = classify(text, PEOPLE);
+    expect(c.personalCounts).toEqual({ ACCOUNT: 1 });
+    const d = route(c, standard);
+    expect([d.tier, d.masked]).toEqual(["orange", true]);
+    expect(maskTexts([text], PEOPLE).masked[0]).toBe("Here is my IBAN: [ACCOUNT_1]");
+  });
+
+  it("catches German labels and long unlabelled numbers, but not short ones", () => {
+    expect(classify("Meine Kontonummer ist 1234 5678 90", PEOPLE).personalCounts).toEqual({ ACCOUNT: 1 });
+    expect(classify("Please pay 4111111111111111 today", PEOPLE).personalCounts).toEqual({ ACCOUNT: 1 });
+    expect(classify("Konto 1 und 2 are fine", PEOPLE).personal).toEqual([]);
+    expect(classify("Order 12345 shipped", PEOPLE).personal).toEqual([]);
+  });
+
+  it("keeps it on GREEN for a team whose admin keeps personal data on GREEN", () => {
+    expect(route(classify("Here is my IBAN: 97283638882900186538", PEOPLE), PRESETS.strict.policy).tier).toBe("green");
   });
 });
 

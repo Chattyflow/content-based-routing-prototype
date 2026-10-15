@@ -25,7 +25,7 @@ A classifier running on the vendor's infrastructure checks each request first:
 - **Nothing sensitive** → the most capable model.
 - **Unsure** (confidence below the admin threshold) → GREEN: "Unsure, so playing safe."
 
-The user always sees the decision and a one-line reason. Overrides are possible within the admin rules, and every request, override and flag is logged.
+Routing is fully automatic. Employees see a plain chat: no model selector, no tiers, no model names. They type, the workspace picks a safe destination, and personal data is masked before it leaves and restored in the reply. Admins see every decision with a one-line reason in the **Routing log**. For the demo, **Show admin view** opens the same information next to the chat.
 
 ## Run it
 
@@ -38,7 +38,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. All data is fictional. **Reset demo** (top right of the tabs) puts the rules and the audit log back to the start.
+Open http://localhost:5173. All data is fictional. **Reset demo** (top right of the tabs) puts the rules and the routing log back to the start.
 
 ```bash
 npm test          # every demo prompt routes as expected, admin rules, masking
@@ -49,31 +49,28 @@ npm run build     # type check + production build
 
 | Existing | New in this prototype |
 |---|---|
-| Three tiers and the coloured border around the input | **Auto (recommended)** model choice: a classifier picks the tier per request |
-| Manual model selector | Manual choice still possible; less safe than the routing asks for confirmation and is logged |
-| Personal-data masking with preview | **Confidential-content detection**: contracts, salaries and figures, M&A and strategy, code and secrets, incidents, documents marked confidential (English and German) |
-| Admin approval for RED | **Decision line** per request: tier, model, one-line reason, confidence; "Why?" shows the detected items and the rules that fired |
-| Audit of AI requests | **Admin rules per team**: an action per category, confidence threshold, RED and override switches, presets |
-| | **Feedback**: "Flag this decision" (too cautious / missed something sensitive) |
-| | **Audit log and dashboard**: detected categories (never content), tier, model, overrides, flags |
+| Three tiers and the coloured border around the input | **No choice for employees**: every request is routed automatically; the chat shows no tier, model or masking |
+| Manual model selector | Removed for employees; the classifier picks the tier per request |
+| Personal-data masking with preview | **Confidential-content detection**: contracts, salaries and figures, M&A and strategy, code and secrets, incidents, documents marked confidential (English and German). Masking now also covers bank account numbers without a valid IBAN checksum |
+| Admin approval for RED | **Admin rules per team**: an action per category, a confidence threshold, the RED switch, presets |
+| Audit of AI requests | **Routing log and dashboard**: detected categories (never content), tier, model and reason per request; details for the current session show the rules that fired and what the external model received |
 
 ## 3-minute demo script
 
-1. **Manual mode (today).** Click the *Supplier contract* sample. Claude is selected, as most people would pick. The warning appears: *"Without routing, this contract would have left EU infrastructure."* Send it: the decision line repeats the warning.
-2. **Auto mode (proposed).** Switch to *Auto (proposed)* at the top and send the same contract. It stays on **GREEN**: *"Kept on EU servers: this looks like a confidential contract or legal matter."* Click **Why?** to see the penalty clause, NDA and "confidential" rules that fired.
+1. **Employee view.** As Lena (HR), click the *Supplier contract* sample and send it. A normal answer comes back. There is no model to pick and nothing about tiers.
+2. **Show admin view** (top right of the tabs). The same request stayed on **GREEN**: *"Kept on EU servers: this looks like a confidential contract or legal matter."* The details list the penalty clause, NDA and "confidential" rules that fired.
 3. **Slogan.** Send *Campaign slogan*: *"Nothing sensitive found: using the most capable model."*
-4. **Customer email.** Send *Customer email*: **ORANGE**, *"Sent to Claude with 1 name and 1 phone number masked."* The preview shows the text next to what Claude receives.
-5. **Ambiguous note.** Send *Ambiguous internal note*: weak signals only, confidence 32%, below the 70% threshold, so **GREEN**: *"Unsure, so playing safe."*
-6. **Admin.** Open **Admin rules** → **HR** → **Strict** (personal data stays on GREEN, threshold 85%, no overrides). Back in Chat, the customer email now stays on GREEN.
-7. **Audit log.** Every request with its detected categories, tier, model, override and flag, and the dashboard: share per tier, override rate, flags, and sensitive requests kept on EU infrastructure.
-
-Also try **Use a different model** on a GREEN decision (a confirmation, then logged) and **Flag this decision**.
+4. **Customer email.** Send *Customer email*: **ORANGE**, *"Sent to Claude with 1 name and 1 phone number masked."* The admin view shows exactly what Claude received. The employee's answer contains the real name again.
+5. **Bank details.** Type *Here is my IBAN: 97283638882900186538*: the number is masked as `[ACCOUNT_1]` before it leaves, and the employee gets a normal reply.
+6. **Ambiguous note.** Send *Ambiguous internal note*: weak signals only, confidence 32%, below the 70% threshold, so **GREEN**: *"Unsure, so playing safe."*
+7. **Admin rules.** Open **Admin rules** → **HR** → **Strict** (personal data stays on GREEN, threshold 85%). Back in Chat, the customer email now stays on GREEN.
+8. **Routing log.** Every request with its detected categories, tier, model and reason, plus the dashboard: share per tier, sensitive requests kept on EU infrastructure, requests masked, and "unsure, so played safe".
 
 ## How the classifier works
 
 Simple, deterministic and explainable, so every decision can be traced:
 
-- **Personal data:** regular expressions for emails, phone numbers, IBANs (with checksum), dates of birth and tax IDs, plus the names of the demo's fictional people.
+- **Personal data:** regular expressions for emails, phone numbers, IBANs (with checksum), other bank account numbers (labelled, or 12 to 24 digits in a row), dates of birth and tax IDs, plus the names of the demo's fictional people.
 - **Confidential content:** weighted keyword and pattern rules per category, in English and German: for example code blocks (+0.4), strings that look like API keys (+0.8), "Vertragsstrafe" (+0.7), "NDA" (+0.6), "Gehalt"/"salary" (+0.6), "merger" (+0.7), "Kündigung" (+0.5). A category's score is the sum of its rules, and it counts as detected from 0.5.
 - **Confidence:** high when a category is clearly detected, or when nothing fires at all. Weak signals that don't add up to a detection give low confidence, and that is when the router plays safe.
 - **Routing:** the strictest admin action among everything detected wins (keep on GREEN, mask for ORANGE, allow any model).
@@ -83,18 +80,18 @@ Code: `src/lib/classifier.ts` and `src/lib/router.ts`, tested in `src/lib/routin
 ## Success metrics
 
 - Share of confidential requests kept on GREEN.
-- Override rate.
-- Flag rate: "too cautious" vs "missed something sensitive".
+- Share of "unsure, so played safe" decisions (too high means the rules are too cautious).
+- Misrouting found in reviews of the routing log.
 - User satisfaction with answer quality.
 
 ## Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Misclassification | Default to GREEN when unsure; admins tune actions and thresholds per team; flags feed the next version of the rules |
-| Over-caution frustrates users | Overrides within admin rules, per-team thresholds, presets such as Lenient for Marketing |
+| Misclassification | Default to GREEN when unsure; admins tune actions and thresholds per team from the routing log |
+| Over-caution lowers answer quality | Per-team thresholds and presets such as Lenient for Marketing, set by admins, not by each employee |
 | Added latency | The classifier is small and runs on the vendor's own infrastructure (about 40 ms) |
 
 ## Next steps
 
-Replace keyword scoring with a small classifier model hosted on EU infrastructure, trained on customer feedback (the flags), while keeping the explanation of each decision.
+Replace keyword scoring with a small classifier model hosted on EU infrastructure, trained on reviewed routing decisions, while keeping the explanation of each decision.

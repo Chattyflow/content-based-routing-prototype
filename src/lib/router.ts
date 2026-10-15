@@ -26,8 +26,6 @@ export const MODELS: Model[] = [
 export const modelById = (id: string) => MODELS.find((m) => m.id === id)!;
 export const BEST_MASKED = modelById("claude");
 
-/** Lower = safer. Used to tell whether a choice is "less safe" than the routing. */
-export const TIER_RANK: Record<Tier, number> = { green: 0, orange: 1, red: 2 };
 const ACTION_RANK: Record<CategoryAction, number> = { green: 0, mask: 1, any: 2 };
 
 export interface Decision {
@@ -45,6 +43,7 @@ const PII_WORDS: Record<PiiKind, [string, string]> = {
   EMAIL: ["email address", "email addresses"],
   PHONE: ["phone number", "phone numbers"],
   IBAN: ["IBAN", "IBANs"],
+  ACCOUNT: ["account number", "account numbers"],
   TAX_ID: ["tax ID", "tax IDs"],
   DOB: ["date of birth", "dates of birth"],
 };
@@ -90,27 +89,4 @@ export function route(c: Classification, policy: Policy): Decision {
     tier: "orange", model: BEST_MASKED, masked: hasPersonal, lowConfidence: false, drivenBy: "none",
     reason: hasPersonal ? `Sent to Claude with ${describeMasking(c.personalCounts)} masked.` : "Nothing sensitive found: using the most capable model.",
   };
-}
-
-/** Tiers a user may pick in an override, given the policy. */
-export function allowedTiers(policy: Policy): Tier[] {
-  return policy.redAllowed ? ["green", "orange", "red"] : ["green", "orange"];
-}
-
-/** Manual mode (today): the warning shown when the pick is less safe than routing would choose. */
-export function manualWarning(decision: Decision, picked: Model): string | null {
-  if (TIER_RANK[picked.tier] <= TIER_RANK[decision.tier]) return null;
-  if (decision.tier === "green") {
-    const what = decision.drivenBy === "confidence" ? "this unclear content" : decision.drivenBy === "personal" ? "this personal data" : `this ${shortName(decision.drivenBy)}`;
-    return `Without routing, ${what} would have left EU infrastructure.`;
-  }
-  return "Without routing, this would have been sent without masking.";
-}
-
-function shortName(c: Decision["drivenBy"]): string {
-  const map: Record<string, string> = {
-    contract_legal: "contract", financial_salary: "salary information", mna_strategy: "strategy information",
-    code_secrets: "code and its secret", security_incident: "incident report", marked_confidential: "confidential document",
-  };
-  return map[c] ?? "content";
 }

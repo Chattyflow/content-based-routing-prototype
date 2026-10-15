@@ -71,7 +71,6 @@ export function Admin({ policies }: { policies: Record<TeamId, Policy> }) {
 
         <div className="space-y-2 text-sm">
           <label className="flex items-center gap-2"><input type="checkbox" checked={p.redAllowed} onChange={(e) => set({ redAllowed: e.target.checked })} /> Allow RED (external models without masking)</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={p.overrideAllowed} onChange={(e) => set({ overrideAllowed: e.target.checked })} /> Let users override the routed model (always logged)</label>
         </div>
       </div>
     </div>

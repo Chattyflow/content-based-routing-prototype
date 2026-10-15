@@ -6,6 +6,8 @@ Vite + React + TypeScript + Tailwind, no backend. See README.md for the feature 
 - `src/lib/classifier.ts`: deterministic rules; every rule records what it matched so the UI can explain it.
 - `src/lib/router.ts`: policy + classification -> tier, model, one-line reason. The strictest action wins; below the threshold stays on GREEN.
 - `src/lib/routing.test.ts` pins every demo prompt to its expected route. Change rule weights only with these tests passing.
-- The audit log stores detected categories, never content.
-- Keep the UI simple: one chat screen, details behind "Why?".
+- The routing log stores detected categories, never content.
+- Employees must never see routing: no model selector, tier, model name or masking text in the chat. Routing details live only in the admin view (`AdminPanel.tsx`) and the Routing log.
+- Request content and routing details stay in memory for the session only; localStorage holds the user, rules and log.
+- Keep the UI simple.
 - All people and companies are fictional. The public repo must not name the company this concept was written for.

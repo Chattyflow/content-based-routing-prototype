@@ -29,9 +29,9 @@ const ALL_GREEN: Record<PolicyCategory, "green"> = {
 };
 
 export const PRESETS: Record<"standard" | "strict" | "lenient", { label: string; policy: Policy }> = {
-  standard: { label: "Standard", policy: { actions: { ...ALL_GREEN, personal: "mask" }, threshold: 0.7, redAllowed: false, overrideAllowed: true } },
-  strict: { label: "Strict", policy: { actions: { ...ALL_GREEN }, threshold: 0.85, redAllowed: false, overrideAllowed: false } },
-  lenient: { label: "Lenient", policy: { actions: { ...ALL_GREEN, personal: "mask", financial_salary: "mask", mna_strategy: "mask" }, threshold: 0.6, redAllowed: false, overrideAllowed: true } },
+  standard: { label: "Standard", policy: { actions: { ...ALL_GREEN, personal: "mask" }, threshold: 0.7, redAllowed: false } },
+  strict: { label: "Strict", policy: { actions: { ...ALL_GREEN }, threshold: 0.85, redAllowed: false } },
+  lenient: { label: "Lenient", policy: { actions: { ...ALL_GREEN, personal: "mask", financial_salary: "mask", mna_strategy: "mask" }, threshold: 0.6, redAllowed: false } },
 };
 
 export function initialPolicies(): Record<TeamId, Policy> {
@@ -71,35 +71,43 @@ export const DEMO_PROMPTS: DemoPrompt[] = [
   },
 ];
 
-/** A week of plausible past requests, so the dashboard is not empty. */
+/** A week of plausible past requests, so the routing log is not empty. */
 export function seedAudit(now = Date.now()): AuditEntry[] {
-  type Row = [hoursAgo: number, user: string, categories: PolicyCategory[], routed: Tier, opts?: Partial<AuditEntry>];
+  const GREEN = "Open-weight model · EU-hosted";
+  const CLAUDE = "Claude · masked";
+  type Row = [hoursAgo: number, user: string, categories: PolicyCategory[], tier: Tier, reason: string, masked?: number, lowConfidence?: boolean];
   const rows: Row[] = [
-    [150, "u-mia", [], "orange"], [149, "u-mia", ["personal"], "orange", { maskedItems: 2 }],
-    [140, "u-lena", ["personal", "financial_salary"], "green"], [130, "u-tobias", ["contract_legal", "marked_confidential"], "green"],
-    [126, "u-jan", ["code_secrets"], "green"], [120, "u-jan", [], "orange"], [118, "u-mia", [], "orange"],
-    [100, "u-tobias", ["contract_legal"], "green", { override: { from: "green", to: "orange", model: "Claude · masked" } }],
-    [96, "u-lena", ["personal", "contract_legal"], "green"], [90, "u-mia", ["mna_strategy"], "orange", { maskedItems: 0 }],
-    [80, "u-jan", ["security_incident"], "green"], [74, "u-lena", [], "green", { lowConfidence: true, confidence: 0.55 }],
-    [70, "u-tobias", ["personal"], "orange", { maskedItems: 3 }], [60, "u-jan", [], "orange", { flag: "too_cautious" }],
-    [52, "u-mia", ["personal"], "orange", { maskedItems: 1 }], [45, "u-lena", ["financial_salary"], "green", { flag: "too_cautious" }],
-    [40, "u-jan", ["code_secrets"], "green"], [30, "u-tobias", [], "orange"], [26, "u-mia", [], "orange"],
-    [20, "u-lena", ["personal"], "orange", { maskedItems: 2, flag: "missed_sensitive" }], [12, "u-jan", [], "green", { lowConfidence: true, confidence: 0.6 }],
-    [6, "u-tobias", ["contract_legal", "personal"], "green"],
+    [150, "u-mia", [], "orange", "Nothing sensitive found: using the most capable model."],
+    [149, "u-mia", ["personal"], "orange", "Sent to Claude with 2 names masked.", 2],
+    [140, "u-lena", ["personal", "financial_salary"], "green", "Kept on EU servers: this looks like salary or financial information."],
+    [130, "u-tobias", ["contract_legal", "marked_confidential"], "green", "Kept on EU servers: this looks like a confidential contract or legal matter."],
+    [126, "u-jan", ["code_secrets"], "green", "Kept on EU servers: this looks like source code with a secret in it."],
+    [120, "u-jan", [], "orange", "Nothing sensitive found: using the most capable model."],
+    [100, "u-tobias", ["contract_legal"], "green", "Kept on EU servers: this looks like a confidential contract or legal matter."],
+    [96, "u-lena", ["personal", "contract_legal"], "green", "Kept on EU servers: this looks like a confidential contract or legal matter."],
+    [90, "u-mia", ["mna_strategy"], "orange", "Sent to Claude with masking: your team allows m&a / strategy on ORANGE."],
+    [80, "u-jan", ["security_incident"], "green", "Kept on EU servers: this looks like a security incident."],
+    [74, "u-lena", [], "green", "Unsure, so playing safe.", 0, true],
+    [70, "u-tobias", ["personal"], "orange", "Sent to Claude with 2 names and 1 email address masked.", 3],
+    [52, "u-mia", ["personal"], "orange", "Sent to Claude with 1 name masked.", 1],
+    [45, "u-lena", ["financial_salary"], "green", "Kept on EU servers: this looks like salary or financial information."],
+    [40, "u-jan", ["code_secrets"], "green", "Kept on EU servers: this looks like source code with a secret in it."],
+    [26, "u-mia", [], "orange", "Nothing sensitive found: using the most capable model."],
+    [20, "u-lena", ["personal"], "orange", "Sent to Claude with 1 name and 1 account number masked.", 2],
+    [12, "u-jan", [], "green", "Unsure, so playing safe.", 0, true],
+    [6, "u-tobias", ["contract_legal", "personal"], "green", "Kept on EU servers: this looks like a confidential contract or legal matter."],
   ];
-  return rows.map(([h, userId, categories, routedTier, opts], i) => ({
+  return rows.map(([h, userId, categories, routedTier, reason, masked = 0, lowConfidence = false], i) => ({
     id: `seed-${i}`,
     at: new Date(now - h * 3_600_000).toISOString(),
     userId,
     team: USERS.find((u) => u.id === userId)!.team,
-    mode: "auto",
     categories,
-    maskedItems: 0,
-    recommendedTier: opts?.override?.from ?? routedTier,
-    routedTier: opts?.override?.to ?? routedTier,
-    model: routedTier === "green" ? "Open-weight model · EU-hosted" : "Claude · masked",
-    confidence: 0.9,
-    lowConfidence: false,
-    ...opts,
+    maskedItems: masked,
+    routedTier,
+    model: routedTier === "green" ? GREEN : CLAUDE,
+    reason,
+    confidence: lowConfidence ? 0.55 : 0.92,
+    lowConfidence,
   }));
 }

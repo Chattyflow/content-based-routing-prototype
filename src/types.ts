@@ -14,7 +14,6 @@ export interface Policy {
   /** Below this confidence the request stays on GREEN. 0..1 */
   threshold: number;
   redAllowed: boolean;
-  overrideAllowed: boolean;
 }
 
 export interface User {
@@ -25,24 +24,17 @@ export interface User {
   avatarColor: string;
 }
 
-export type Mode = "auto" | "manual";
-
+/** One routed request, as admins see it. Detected categories only, never the content. */
 export interface AuditEntry {
   id: string;
   at: string;
   userId: string;
   team: TeamId;
-  mode: Mode;
-  /** Detected categories only, never the content. */
   categories: PolicyCategory[];
   maskedItems: number;
-  recommendedTier: Tier;
   routedTier: Tier;
   model: string;
+  reason: string;
   confidence: number;
   lowConfidence: boolean;
-  override?: { from: Tier; to: Tier; model: string };
-  /** Manual mode: the user's pick was less safe than routing would have chosen. */
-  manualRisk?: boolean;
-  flag?: "too_cautious" | "missed_sensitive";
 }

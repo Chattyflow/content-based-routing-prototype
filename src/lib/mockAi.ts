@@ -42,5 +42,8 @@ export function mockReply(sentText: string): string {
   if (/leadership|note/.test(t)) {
     return "Noted. Suggested follow-up: send the figures to the leadership group only, once they are final, and mark the message as internal.";
   }
-  return `Here is a first answer to "${sentText.slice(0, 80)}". In the full product this would come from the routed model; in this prototype the reply is mocked.`;
+  if (/\[(account|iban)_\d+\]|\biban\b|bank details|account number|kontonummer/i.test(t)) {
+    return "Thanks. For your security I won't store bank details in this chat. To update the account your salary or payments go to, please use the self-service portal or contact the payroll team, who can verify the change with you.";
+  }
+  return `Here's a first draft for "${sentText.slice(0, 70)}${sentText.length > 70 ? "…" : ""}". Tell me more about the goal and the audience, and I'll refine it.`;
 }
