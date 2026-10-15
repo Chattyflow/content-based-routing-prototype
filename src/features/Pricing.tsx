@@ -1,8 +1,9 @@
 // Pricing for the routing API: plans with monthly or yearly billing (all coming
-// soon) and how the API is called.
+// soon) and a live "Try the API" box.
 
 import { useState } from "react";
 import { Check, Code2, KeyRound, ShieldCheck } from "lucide-react";
+import { DEMO_PROMPTS } from "../store/seed";
 import { PLANS, euro, type Billing, type Plan } from "./plans";
 
 const LAW = [
@@ -57,7 +58,7 @@ export function Pricing() {
       </div>
       <p className="-mt-6 text-center text-xs text-slate-500">Prices excl. VAT. A check is one API call for one text of up to 8,000 characters.</p>
 
-      <ApiSection />
+      <TryApi />
 
       <section className="space-y-3" aria-labelledby="law">
         <h2 id="law" className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck className="size-5 text-emerald-700" aria-hidden /> Built for European privacy law</h2>
@@ -94,18 +95,41 @@ function Price({ plan, billing }: { plan: Plan; billing: Billing }) {
   );
 }
 
-function ApiSection() {
+function TryApi() {
+  const [text, setText] = useState(DEMO_PROMPTS.find((p) => p.id === "customer")!.text);
+  const [result, setResult] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const endpoint = `${location.origin}/api/v1/check`;
   const curl = `curl -X POST ${endpoint} \\\n  -H "Content-Type: application/json" \\\n  -d '{"text": "Please call Petra Lindqvist on +49 40 5550 1234"}'`;
 
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/v1/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, ai: true }) });
+      if (r.status === 429) setResult("Too many requests from your network. Please wait a minute and try again.");
+      else setResult(JSON.stringify(await r.json(), null, 2));
+    } catch {
+      setResult("The API is not reachable from this page.");
+    }
+    setBusy(false);
+  };
+
   return (
-    <section className="card min-w-0 space-y-3 p-5" aria-labelledby="api">
-      <h2 id="api" className="flex items-center gap-2 text-lg font-semibold"><Code2 className="size-5" aria-hidden /> One call before every model request</h2>
-      <p className="text-sm text-slate-600">Send the text. You get back where it may go, why, and a masked version that is safe to send to an external model.</p>
-      <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100"><code>{curl}</code></pre>
-      <button className="btn btn-primary" disabled title="Coming soon">
-        <KeyRound className="size-4" aria-hidden /> Login to generate key
-      </button>
+    <section className="card grid gap-5 p-5 lg:grid-cols-2" aria-labelledby="try">
+      <div className="min-w-0 space-y-3">
+        <h2 id="try" className="flex items-center gap-2 text-lg font-semibold"><Code2 className="size-5" aria-hidden /> One call before every model request</h2>
+        <p className="text-sm text-slate-600">Send the text. You get back where it may go, why, and a masked version that is safe to send to an external model.</p>
+        <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100"><code>{curl}</code></pre>
+        <button className="btn btn-primary" disabled title="Coming soon">
+          <KeyRound className="size-4" aria-hidden /> Login to generate key
+        </button>
+      </div>
+      <div className="min-w-0 space-y-2">
+        <label htmlFor="api-text" className="text-sm font-medium">Try it</label>
+        <textarea id="api-text" rows={4} className="input resize-y" value={text} onChange={(e) => setText(e.target.value)} />
+        <button className="btn btn-primary" onClick={run} disabled={busy || !text.trim()}>{busy ? "Checking…" : "Send to the API"}</button>
+        {result && <pre className="max-h-80 overflow-auto rounded-lg bg-slate-50 p-3 text-xs" aria-live="polite"><code>{result}</code></pre>}
+      </div>
     </section>
   );
 }

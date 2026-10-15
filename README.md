@@ -49,7 +49,7 @@ npm run build     # type check + production build
 
 ## Pricing and the API
 
-The **Pricing** tab sells the same engine as an API for other products: plan cards (Developer, Team, Business, Enterprise) with monthly or yearly billing, all marked *Coming soon*, a curl example and a disabled **Login to generate key** button. Plans and prices live in `src/features/plans.ts`.
+The **Pricing** tab sells the same engine as an API for other products: plan cards (Developer, Team, Business, Enterprise) with monthly or yearly billing, all marked *Coming soon*, a curl example, a disabled **Login to generate key** button, and a live **Try it** box that runs the rules plus the AI check. Plans and prices live in `src/features/plans.ts`.
 
 The API works today, without a key (rules engine only):
 
@@ -59,7 +59,7 @@ curl -X POST http://localhost:5173/api/v1/check \
   -d '{"text": "Please call Petra Lindqvist on +49 40 5550 1234"}'
 ```
 
-It returns the tier (`green`, `orange` or `red`), a one-line reason, detected categories and personal data, and `masked_text` to send to an external model. An optional `policy` is `standard`, `strict` or `lenient`.
+It returns the tier (`green`, `orange` or `red`), a one-line reason, detected categories and personal data, and `masked_text` to send to an external model. An optional `policy` is `standard`, `strict` or `lenient`. With `"ai": true`, a language model on OpenRouter checks the text as well (it can only add findings, never remove them) and the answer includes `ai_check`; without `LLM_API_KEY` it reports the AI check as off and answers from the rules.
 
 ## Host it on Netlify
 

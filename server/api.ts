@@ -3,12 +3,12 @@
 // (netlify/functions/api.ts). The API key comes from the environment and
 // never reaches the browser.
 //
-//   POST /api/v1/check { text, policy? } -> routing decision + masked text (rules only, no key needed)
+//   POST /api/v1/check { text, policy?, ai? } -> routing decision + masked text (rules; "ai": true adds the AI check)
 //   POST /api/classify { text }          -> AiCheck  (the optional AI check next to the rules)
 //   POST /api/chat     { messages }      -> AiAnswer (a real answer for the chat)
 //   GET  /api/status                     -> { ai: boolean, model }
 
-import { AI_SYSTEM_PROMPT, aiUserMessage, parseAiReply, type AiCheck } from "../src/lib/aiCheck.ts";
+import { AI_SYSTEM_PROMPT, aiUserMessage, mergeAi, parseAiReply, type AiCheck } from "../src/lib/aiCheck.ts";
 import { CHAT_SYSTEM_PROMPT, type AiAnswer, type ChatMessage } from "../src/lib/aiChat.ts";
 import { CATEGORY_INFO, classify } from "../src/lib/classifier.ts";
 import { maskTexts } from "../src/lib/pii.ts";
@@ -148,12 +148,18 @@ async function aiChat(env: Env, messages: ChatMessage[]): Promise<AiAnswer> {
 }
 
 /** The public API: the rules engine, deterministic and fast. */
-export function check(text: string, policyName = "standard") {
+export function check(text: string, policyName = "standard", ai?: AiCheck) {
   const preset = PRESETS[policyName as keyof typeof PRESETS] ?? PRESETS.standard;
-  const c = classify(text, PEOPLE);
+  // With the AI check, a language model adds what the rules missed (it can never remove anything).
+  const c = ai ? mergeAi(classify(text, PEOPLE), ai, text, PEOPLE) : classify(text, PEOPLE);
   const d = route(c, preset.policy);
-  const m = maskTexts([text], PEOPLE);
+  const m = maskTexts([text], PEOPLE, c.extra);
   return {
+    ...(ai && {
+      ai_check: ai.status === "ok"
+        ? { status: "ok", model: ai.finding.model, summary: ai.finding.summary, confidence: ai.finding.confidence }
+        : { ...ai, note: "Rules only." },
+    }),
     tier: d.tier,
     destination: d.model.label,
     reason: d.reason,
@@ -195,7 +201,9 @@ export async function handleApi(path: string, method: string, bodyText: string, 
     const text = typeof body.text === "string" ? body.text : "";
     if (!text.trim()) return json(400, { error: 'Send {"text": "..."}.' }, true);
     if (text.length > MAX_CHARS) return json(413, { error: `Text is longer than ${MAX_CHARS} characters.` }, true);
-    return json(200, check(text, typeof body.policy === "string" ? body.policy : undefined), true);
+    // Optional "ai": true adds the AI check (needs LLM_API_KEY; otherwise reported as off).
+    const ai = body.ai === true ? await aiClassify(env, text) : undefined;
+    return json(200, check(text, typeof body.policy === "string" ? body.policy : undefined, ai), true);
   }
   if (path === "/api/classify") return json(200, await aiClassify(env, String(body.text ?? "")));
   if (path === "/api/chat") return json(200, await aiChat(env, Array.isArray(body.messages) ? (body.messages as ChatMessage[]) : []));

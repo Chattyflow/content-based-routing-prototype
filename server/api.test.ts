@@ -95,3 +95,25 @@ describe("model fallback (fake OpenRouter, no network)", () => {
     expect(DEFAULT_MODELS.every((m) => m.endsWith(":free"))).toBe(true);
   });
 });
+
+describe('public API with "ai": true', () => {
+  beforeEach(() => resetCooldowns());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("adds what the AI check found, and masks it too", async () => {
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ choices: [{ message: { content:
+      '{"personal":[{"kind":"NAME","value":"zoe quint"}],"categories":[{"category":"health_data","confidence":0.9,"evidence":"x-ray"}],"confidence":0.9,"summary":"A name and health data."}' } }] })));
+    const r = await post("/api/v1/check", { text: "zoe quint sent her x-ray results", ai: true }, { LLM_API_KEY: "test-key", LLM_MODEL: "m" });
+    expect(r.body).toMatchObject({
+      ai_check: { status: "ok", model: "m", summary: "A name and health data." },
+      tier: "green",
+      categories: [{ id: "health_data" }],
+      masked_text: "[NAME_1] sent her x-ray results",
+    });
+  });
+
+  it("reports the AI check as off without a key and still answers from the rules", async () => {
+    const r = await post("/api/v1/check", { text: "Please call Petra Lindqvist", ai: true });
+    expect(r.body).toMatchObject({ ai_check: { status: "off", note: "Rules only." }, tier: "orange", masked_text: "Please call [NAME_1]" });
+  });
+});
