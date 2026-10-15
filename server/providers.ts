@@ -1,6 +1,7 @@
 // AI providers, tried in order: OpenRouter first, then backups. Each backup is
-// switched on by setting its key. When a provider runs into its daily limit, it
-// is paused for a while and the next one takes over, so the app keeps working.
+// switched on by setting its key. When a provider runs into its limit, the next
+// one answers in the same request, and the first is used again as soon as its
+// limit resets.
 //
 // All of them speak the OpenAI-compatible chat API. The key names deliberately
 // avoid the variables Netlify's AI Gateway injects (OPENROUTER_API_KEY,
@@ -100,10 +101,27 @@ const PER_CALL_MS = 20_000;
 // A model that just failed is tried last for a while: briefly when busy or slow,
 // longer when it refuses us.
 const COOLDOWN_MS = { busy: 60_000, refused: 10 * 60_000 };
-// A provider whose daily limit is reached (or whose key is rejected) is skipped
-// for a while, and the next provider takes over.
-const PAUSE_MS = 15 * 60_000;
+// A provider whose limit is reached is skipped, and the next provider answers in
+// the same request. It is skipped only until its limit resets, as the provider
+// reports it; without a reset time it is checked again after RECHECK_MS.
+const RECHECK_MS = 2 * 60_000;
+const MAX_SKIP_MS = 24 * 60 * 60_000;
+// A rejected key will not fix itself quickly.
+const REJECTED_KEY_MS = 15 * 60_000;
 const cooldownUntil = new Map<string, number>();
+
+/** When the provider says its limit resets: Retry-After or X-RateLimit-Reset, in the response or in OpenRouter's error metadata. */
+export function resetAt(headers: Headers, body: unknown, now = Date.now()): number | null {
+  const meta = (body as { error?: { metadata?: { headers?: Record<string, unknown> } } })?.error?.metadata?.headers ?? {};
+  const pick = (name: string) => headers.get(name) ?? Object.entries(meta).find(([k]) => k.toLowerCase() === name)?.[1];
+  const retryAfter = Number(pick("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return now + retryAfter * 1000;
+  const reset = Number(pick("x-ratelimit-reset"));
+  if (!Number.isFinite(reset) || reset <= 0) return null;
+  if (reset > 1e12) return reset; // milliseconds since 1970
+  if (reset > 1e9) return reset * 1000; // seconds since 1970
+  return now + reset * 1000; // seconds from now
+}
 const paused = new Map<string, { until: number; why: string }>();
 
 export const resetCooldowns = () => {
@@ -149,20 +167,23 @@ export async function complete(env: Env, messages: Message[], temperature: numbe
       });
       if (!r.ok) {
         // Providers say why (shared pool busy, daily limit, ...): keep it for the admin view.
-        const detail = await r.text().then((t) => {
+        const body: unknown = await r.text().then((t) => {
           const j = JSON.parse(t);
-          return String((Array.isArray(j) ? j[0] : j)?.error?.message ?? "");
-        }).catch(() => "");
+          return Array.isArray(j) ? j[0] : j;
+        }).catch(() => null);
+        const detail = String((body as { error?: { message?: unknown } } | null)?.error?.message ?? "");
         if (detail) reason = detail.slice(0, 160);
         if (isDailyLimit(r.status, detail)) {
           const why = dailyLimitMessage(p, reason);
-          paused.set(p.id, { until: Date.now() + PAUSE_MS, why });
+          // Skip it until its limit resets; the next provider answers right away.
+          const until = Math.min(resetAt(r.headers, body) ?? Date.now() + RECHECK_MS, Date.now() + MAX_SKIP_MS);
+          paused.set(p.id, { until: Math.max(until, Date.now() + 30_000), why });
           errors.push(why);
           return "skip-provider";
         }
         if (r.status === 401 || r.status === 403 && !/model/i.test(detail)) {
           const why = `${p.name} rejected the API key (HTTP ${r.status}).`;
-          paused.set(p.id, { until: Date.now() + PAUSE_MS, why });
+          paused.set(p.id, { until: Date.now() + REJECTED_KEY_MS, why });
           errors.push(why);
           return "skip-provider";
         }
@@ -220,6 +241,6 @@ export async function complete(env: Env, messages: Message[], temperature: numbe
 
   if (tried > 0 && busy.length === tried) return { error: `All models are busy (rate-limited)${reason ? `: ${reason}` : ""}. Try again shortly.` };
   const limits = errors.filter((e) => /^Daily /.test(e) || /rejected the API key/.test(e));
-  if (limits.length && limits.length >= providers.length) return { error: `${[...new Set(limits)].join(" ")} AI is paused for a while; rules and canned replies are used meanwhile.` };
+  if (limits.length && limits.length >= providers.length) return { error: `${[...new Set(limits)].join(" ")} Every AI provider has reached its limit, so the rules and canned replies are used until one is available again (checked automatically). Adding another provider key avoids this.` };
   return { error: errors.at(-1) ?? "No model answered." };
 }

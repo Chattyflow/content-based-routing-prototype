@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BACKUP_MODELS, DEFAULT_MODELS, PRIMARY_MODELS, handleApi, resetCooldowns } from "./api.ts";
+import { resetAt } from "./providers.ts";
 
 const post = (path: string, body: unknown, env = {}) => handleApi(path, "POST", JSON.stringify(body), env);
 
@@ -237,6 +238,54 @@ describe("backup AI providers (fake APIs, no network)", () => {
   it("explains when every provider is out for the day", async () => {
     vi.stubGlobal("fetch", async () => dailyLimit());
     const r = (await post("/api/chat", { messages: [{ role: "user", content: "hi" }] }, { LLM_API_KEY: "a", GROQ_API_KEY: "b" })).body as { message: string };
-    expect(r.message).toMatch(/OpenRouter key.*Daily limit reached on Groq.*AI is paused for a while/);
+    expect(r.message).toMatch(/OpenRouter key.*Daily limit reached on Groq.*Every AI provider has reached its limit/);
+  });
+});
+
+describe("switching back automatically when a limit resets (fake APIs)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("reads the reset time providers send", () => {
+    const now = 1_000_000_000_000;
+    expect(resetAt(new Headers({ "retry-after": "120" }), null, now)).toBe(now + 120_000);
+    expect(resetAt(new Headers(), { error: { metadata: { headers: { "X-RateLimit-Reset": String(now + 5000) } } } }, now)).toBe(now + 5000);
+    expect(resetAt(new Headers({ "x-ratelimit-reset": "2000000000" }), null, now)).toBe(2_000_000_000_000);
+    expect(resetAt(new Headers(), { error: { message: "no reset info" } }, now)).toBeNull();
+  });
+
+  it("answers from the backup at once, and goes back to OpenRouter as soon as its limit resets", async () => {
+    resetCooldowns();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t0 = Date.UTC(2026, 9, 15, 23, 59);
+    vi.setSystemTime(t0);
+    let limited = true;
+    let hosts: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const host = new URL(url).host;
+      hosts.push(host);
+      if (host === "openrouter.ai" && limited) {
+        return new Response(JSON.stringify({ error: { message: "Rate limit exceeded: free-models-per-day.", metadata: { headers: { "X-RateLimit-Reset": String(t0 + 60_000) } } } }), { status: 429 });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: `hello from ${host}` } }] }));
+    });
+    const env = { LLM_API_KEY: "or-key", GROQ_API_KEY: "groq-key" };
+    const ask = async () => ((await post("/api/chat", { messages: [{ role: "user", content: "hi" }] }, env)).body as { reply: string }).reply;
+
+    expect(await ask()).toBe("hello from api.groq.com"); // same request, no waiting
+    expect(hosts).toEqual(["openrouter.ai", "api.groq.com"]);
+
+    hosts = [];
+    vi.setSystemTime(t0 + 30_000);
+    expect(await ask()).toBe("hello from api.groq.com");
+    expect(hosts).toEqual(["api.groq.com"]); // OpenRouter is not asked again before its reset
+
+    hosts = [];
+    limited = false;
+    vi.setSystemTime(t0 + 61_000);
+    expect(await ask()).toBe("hello from openrouter.ai"); // back on OpenRouter after the reset
+    expect(hosts).toEqual(["openrouter.ai"]);
   });
 });
