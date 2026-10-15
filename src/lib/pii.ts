@@ -28,6 +28,85 @@ const ACCOUNT_LABELLED = /(?:IBAN|BIC|account(?: number| no\.?)?|acct\.?|Kontonu
 // Long digit runs on their own are typical of account and card numbers.
 const LONG_NUMBER = /(?<![\w.,])\d{12,24}(?![\w.,])/g;
 
+// Names of people the workspace does not know, found from context:
+//   a title ("Mr. Ahmed Fakh", "Frau Yilmaz"), a cue ("patient Ahmed Fakh",
+//   "my name is Ahmed"), or a common first name followed by a surname.
+// The title itself stays readable; only the name is masked.
+// Case matters: "HR team" and "40 ms" are not titles. Lowercase only for the casual "mr ahmed".
+const TITLE = /(?<!\p{L})(?:(?:Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Sir|Madam|Herr|Frau|Hr|Fr|mr|mrs|herr|frau)\.?|(?:dr|prof)\.)(?=[ \t])/gu;
+const NAME_CUE = /(?<!\p{L})(?:my name is|name is|named|name|called|patient(?:in|en|innen|s)?|client|customer|tenant|employee|colleague|heißt|namens|Kunde|Kundin|Mitarbeiter(?:in)?)(?:[ \t]*(?::|is|ist))?(?!\p{L})/giu;
+const TITLES = new Set(["mr", "mrs", "ms", "miss", "mx", "dr", "prof", "sir", "madam", "herr", "frau", "hr", "fr"]);
+const PARTICLES = new Set(["von", "van", "de", "der", "den", "al", "el", "bin", "ibn", "da", "di", "le", "la", "du"]);
+// Words that are never part of a name, so "named the file" or "customer The…" find nothing.
+const NOT_NAMES = new Set([
+  "a", "an", "and", "or", "the", "is", "was", "are", "be", "to", "of", "in", "on", "at", "for", "from", "with", "who", "which", "that", "this", "these", "those",
+  "he", "she", "they", "we", "i", "you", "it", "his", "her", "their", "our", "my", "your", "its", "has", "have", "had", "will", "would", "can", "please",
+  "about", "after", "before", "today", "yesterday", "tomorrow", "service", "support", "team", "success", "care", "number", "id", "file", "list",
+  "und", "oder", "der", "die", "das", "ein", "eine", "ist", "war", "mit", "von", "für", "aus", "bei", "er", "sie", "es", "wir", "ich", "heute", "gestern",
+]);
+// Common first names, used only when a capitalised surname follows ("Ahmed Fakh").
+const FIRST_NAMES = new Set([
+  "ahmed", "ahmad", "mohammed", "mohamed", "muhammad", "mahmoud", "ali", "omar", "hassan", "hussein", "khalid", "youssef", "yusuf", "ibrahim", "mustafa",
+  "fatima", "aisha", "layla", "leila", "mariam", "maryam", "noor", "zainab", "amira", "samir", "karim", "rami", "tarek", "nadia", "yasmin",
+  "mehmet", "ayse", "fatma", "emre", "murat", "elif", "zeynep", "burak", "hakan", "selin",
+  "anna", "maria", "thomas", "michael", "andreas", "stefan", "christian", "peter", "klaus", "jürgen", "sabine", "julia", "laura", "katharina", "sophie",
+  "lukas", "felix", "jonas", "leon", "paul", "sebastian", "alexander", "matthias", "martin", "frank", "monika", "ursula", "petra", "claudia", "sandra",
+  "john", "james", "robert", "david", "richard", "joseph", "daniel", "george", "mary", "sarah", "emma", "olivia", "emily", "jessica", "jennifer", "linda",
+  "carlos", "juan", "jose", "luis", "sofia", "elena", "isabel", "lucia", "marco", "giulia", "francesca", "pierre", "marie", "camille", "nicolas",
+  "ivan", "olga", "natalia", "dmitri", "sergei", "piotr", "agnieszka", "katarzyna", "jan", "lars", "erik", "ingrid", "priya", "raj", "anil", "wei", "chen",
+]);
+
+/** The name that starts at `pos` (after optional spaces and titles), or null. */
+function takeName(text: string, pos: number, allowLowercase: boolean): { start: number; end: number } | null {
+  const word = /[ \t]*(\p{L}[\p{L}'’-]*)(\.?)/uy;
+  const parts: { start: number; end: number; particle: boolean }[] = [];
+  let lowercase = false;
+  word.lastIndex = pos;
+  for (let m = word.exec(text); m && parts.length < 4; m = word.exec(text)) {
+    const w = m[1];
+    const key = w.toLowerCase();
+    const start = m.index + m[0].length - m[2].length - w.length;
+    const end = start + w.length;
+    if (!parts.length && TITLES.has(key)) continue; // "name Mr. Ahmed"
+    if (parts.length && !lowercase && PARTICLES.has(key)) { parts.push({ start, end, particle: true }); continue; }
+    if (NOT_NAMES.has(key)) break;
+    const capital = /^\p{Lu}/u.test(w) && /\p{Ll}/u.test(w); // "Fakh", "McKay"; not "NDA" or "I"
+    if (capital && !lowercase) parts.push({ start, end, particle: false });
+    else if (!capital && allowLowercase && (lowercase || !parts.length) && parts.length < 2) { lowercase = true; parts.push({ start, end, particle: false }); }
+    else break;
+    if (m[2]) break; // a full stop ends the name
+  }
+  while (parts.length && parts.at(-1)!.particle) parts.pop();
+  return parts.length ? { start: parts[0].start, end: parts.at(-1)!.end } : null;
+}
+
+/** Names found from context, with every later mention of the same person. */
+function contextNames(text: string): { value: string; start: number; personId: string }[] {
+  const spans: { start: number; end: number }[] = [];
+  const push = (s: { start: number; end: number } | null, minWords = 1) => {
+    if (!s || text.slice(s.start, s.end).split(/\s+/).length < minWords) return;
+    if (!spans.some((x) => s.start < x.end && s.end > x.start)) spans.push(s);
+  };
+  for (const m of text.matchAll(TITLE)) push(takeName(text, m.index! + m[0].length, true));
+  for (const m of text.matchAll(NAME_CUE)) push(takeName(text, m.index! + m[0].length, false));
+  for (const m of text.matchAll(/(?<!\p{L})\p{Lu}\p{Ll}+(?=[ \t]+\p{Lu})/gu)) {
+    if (FIRST_NAMES.has(m[0].toLowerCase())) push(takeName(text, m.index!, false), 2);
+  }
+
+  const out: { value: string; start: number; personId: string }[] = [];
+  for (const s of spans) {
+    const value = text.slice(s.start, s.end);
+    const personId = `found:${value}`;
+    out.push({ value, start: s.start, personId });
+    // Other mentions of the same person: the full name, or one part of it on its own.
+    const variants = [value, ...value.split(/\s+/).filter((p) => p.length >= 3 && !PARTICLES.has(p.toLowerCase()) && /^\p{Lu}/u.test(p))];
+    for (const v of variants) {
+      for (const m of text.matchAll(new RegExp(`(?<!\\p{L})${escapeRegex(v)}(?!\\p{L})`, "gu"))) out.push({ value: m[0], start: m.index!, personId });
+    }
+  }
+  return out;
+}
+
 /** IBAN checksum (ISO 13616, mod 97), so random letters and digits are not masked. */
 export function ibanValid(candidate: string): boolean {
   const s = candidate.replace(/\s/g, "").toUpperCase();
@@ -67,6 +146,12 @@ export function detect(text: string, people: KnownPerson[] = []): (PiiMatch & { 
     found.push({ kind, value, start, end, personId });
   };
   for (const m of text.matchAll(EMAIL)) add("EMAIL", m[0], m.index!);
+  // Known people first, so "Mr. Daniel Krüger" keeps the known person's placeholder.
+  for (const v of nameVariants(people)) {
+    const re = new RegExp(`(?<![\\p{L}])${escapeRegex(v.text)}(?![\\p{L}])`, "gu");
+    for (const m of text.matchAll(re)) add("NAME", m[0], m.index!, v.personId);
+  }
+  for (const n of contextNames(text)) add("NAME", n.value, n.start, n.personId);
   for (const m of text.matchAll(IBAN)) if (ibanValid(m[0])) add("IBAN", m[0], m.index!);
   for (const m of text.matchAll(ACCOUNT_LABELLED)) {
     if (m[1].replace(/\D/g, "").length >= 8) add("ACCOUNT", m[1].trim(), m.index! + m[0].lastIndexOf(m[1]));
@@ -78,10 +163,6 @@ export function detect(text: string, people: KnownPerson[] = []): (PiiMatch & { 
     if (digits.length >= 9 && digits.length <= 15) add("PHONE", m[0].trim(), m.index!);
   }
   for (const m of text.matchAll(LONG_NUMBER)) add("ACCOUNT", m[0], m.index!);
-  for (const v of nameVariants(people)) {
-    const re = new RegExp(`(?<![\\p{L}])${escapeRegex(v.text)}(?![\\p{L}])`, "gu");
-    for (const m of text.matchAll(re)) add("NAME", m[0], m.index!, v.personId);
-  }
   return found.sort((a, b) => a.start - b.start);
 }
 
@@ -111,7 +192,9 @@ export function maskTexts(texts: string[], people: KnownPerson[] = []): MaskResu
         counters[h.kind] = (counters[h.kind] ?? 0) + 1;
         placeholder = `[${h.kind}_${counters[h.kind]}]`;
         byKey.set(key, placeholder);
-        restore[placeholder] = h.kind === "NAME" ? people.find((p) => p.id === h.personId)?.name ?? h.value : h.value;
+        restore[placeholder] = h.kind !== "NAME" ? h.value
+          : h.personId?.startsWith("found:") ? h.personId.slice(6)
+          : people.find((p) => p.id === h.personId)?.name ?? h.value;
       }
       matches.push({ ...h, placeholder, textIndex });
       out += text.slice(pos, h.start) + placeholder;

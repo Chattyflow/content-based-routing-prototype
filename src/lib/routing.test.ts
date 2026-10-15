@@ -105,3 +105,52 @@ describe("masking", () => {
     expect({ ...a, timeMs: 0 }).toEqual({ ...b, timeMs: 0 });
   });
 });
+
+describe("names of people the workspace does not know", () => {
+  const names = (text: string) => classify(text, PEOPLE).personal.filter((p) => p.kind === "NAME").map((p) => p.value);
+
+  it("masks a name after a title: 'i have a patience name Mr. Ahmed Fakh'", () => {
+    const text = "i have a patience name Mr. Ahmed Fakh";
+    expect(names(text)).toEqual(["Ahmed Fakh"]);
+    const d = route(classify(text, PEOPLE), standard);
+    expect([d.tier, d.masked]).toEqual(["orange", true]);
+    expect(d.reason).toBe("Sent to Claude with 1 name masked.");
+    expect(maskTexts([text], PEOPLE).masked[0]).toBe("i have a patience name Mr. [NAME_1]");
+  });
+
+  it("finds names after titles, cue words and common first names, in English and German", () => {
+    expect(names("mr ahmed fakh called")).toEqual(["ahmed fakh"]);
+    expect(names("Frau Yilmaz ruft morgen an")).toEqual(["Yilmaz"]);
+    expect(names("Dr. María José García-López will join")).toEqual(["María José García-López"]);
+    expect(names("My name is Omar.")).toEqual(["Omar"]);
+    expect(names("The customer: Ingrid van der Berg")).toEqual(["Ingrid van der Berg"]);
+    expect(names("Ahmed Fakh asked about his invoice")).toEqual(["Ahmed Fakh"]);
+  });
+
+  it("gives every mention of the same person the same placeholder and restores the full name", () => {
+    const r = maskTexts(["Mr. Ahmed Fakh called. Please call Ahmed back."], PEOPLE);
+    expect(r.masked[0]).toBe("Mr. [NAME_1] called. Please call [NAME_1] back.");
+    expect(r.restore["[NAME_1]"]).toBe("Ahmed Fakh");
+  });
+
+  it("does not see names where there are none", () => {
+    for (const text of ["Name the file report.txt", "Our HR team meets at 10", "Classified in 40 ms on EU servers", "Write a slogan for our summer campaign", "Mr. and the team"]) {
+      expect(names(text), text).toEqual([]);
+    }
+  });
+});
+
+describe("health and patient data", () => {
+  it("keeps a patient's details on GREEN under the standard rules, and still finds the name", () => {
+    const c = classify("I have a patient named Ahmed Fakh, diagnosis: diabetes type 2.", PEOPLE);
+    expect(c.detected).toContain("health_data");
+    expect(c.personal.map((p) => p.value)).toContain("Ahmed Fakh");
+    const d = route(c, standard);
+    expect(d.tier).toBe("green");
+    expect(d.reason).toBe("Kept on EU servers: this looks like health or patient information.");
+  });
+
+  it("catches German sick notes", () => {
+    expect(classify("Krankmeldung von Frau Yilmaz für nächste Woche", PEOPLE).detected).toContain("health_data");
+  });
+});

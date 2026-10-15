@@ -1,7 +1,7 @@
 export type Tier = "green" | "orange" | "red";
 
 /** Confidential business content the classifier looks for. Personal data is separate. */
-export type ConfidentialCategory = "contract_legal" | "financial_salary" | "mna_strategy" | "code_secrets" | "security_incident" | "marked_confidential";
+export type ConfidentialCategory = "contract_legal" | "financial_salary" | "mna_strategy" | "code_secrets" | "security_incident" | "health_data" | "marked_confidential";
 export type PolicyCategory = ConfidentialCategory | "personal";
 
 /** What the admin wants for a category: keep on GREEN, mask and allow ORANGE, or allow any model. */

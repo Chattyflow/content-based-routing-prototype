@@ -10,7 +10,7 @@ export function DecisionSummary({ d }: { d: RoutingDetail }) {
     <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <TierPill tier={d.decision.tier} />
-        <span className="font-medium">{d.decision.model.label}</span>
+        <span className="font-medium">{d.decision.tier === "orange" && !d.mask?.count ? "Claude · nothing to mask" : d.decision.model.label}</span>
         <span className="text-xs text-slate-500">· confidence {Math.round(d.classification.confidence * 100)}%</span>
       </div>
       <p className="text-sm text-slate-700">{d.decision.reason}</p>

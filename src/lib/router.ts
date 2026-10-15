@@ -86,7 +86,7 @@ export function route(c: Classification, policy: Policy): Decision {
     return { tier: "red", model: modelById("claude-red"), reason: "Your team allows personal data unmasked: using the most capable model.", lowConfidence: false, drivenBy: "personal", masked: false };
   }
   return {
-    tier: "orange", model: BEST_MASKED, masked: hasPersonal, lowConfidence: false, drivenBy: "none",
+    tier: "orange", model: BEST_MASKED, masked: true, lowConfidence: false, drivenBy: "none",
     reason: hasPersonal ? `Sent to Claude with ${describeMasking(c.personalCounts)} masked.` : "Nothing sensitive found: using the most capable model.",
   };
 }

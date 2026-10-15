@@ -26,6 +26,7 @@ export const CATEGORY_INFO: Record<ConfidentialCategory, { label: string; reason
   mna_strategy: { label: "M&A / strategy", reason: "merger or strategy plans" },
   code_secrets: { label: "Source code / secrets", reason: "source code with a secret in it" },
   security_incident: { label: "Security incident", reason: "a security incident" },
+  health_data: { label: "Health / patient data", reason: "health or patient information" },
   marked_confidential: { label: "Marked confidential", reason: "a document marked confidential" },
 };
 
@@ -61,6 +62,13 @@ export const RULES: Rule[] = [
   { id: "incident", category: "security_incident", label: "Incident / breach", weight: 0.6, pattern: /\b(security incident|Sicherheitsvorfall|breach|ransomware|compromised|kompromittiert|CVE-\d{4}-\d+)\b/i },
   { id: "phishing", category: "security_incident", label: "Phishing / vulnerability", weight: 0.4, pattern: /\b(phishing|vulnerability|Schwachstelle|exploit)\b/i },
   { id: "forensics", category: "security_incident", label: "Outage / forensics", weight: 0.3, pattern: /\b(outage|Ausfall|forensics?|Forensik)\b/i },
+
+  // Health / patient data (a special category under GDPR Art. 9)
+  { id: "patient", category: "health_data", label: "Patient / Patient(in)", weight: 0.5, pattern: /\b(patients?|Patient(?:in|en|innen)?)\b/i },
+  { id: "diagnosis", category: "health_data", label: "Diagnosis / medical record", weight: 0.6, pattern: /\b(diagnos(?:is|es|ed)|Diagnosen?|Befund\w*|medical (?:record|history|report)s?|Krankenakte\w*|Anamnese)\b/i },
+  { id: "sick-leave", category: "health_data", label: "Sick leave / Krankmeldung", weight: 0.5, pattern: /\b(sick (?:note|leave)|Krankmeldung\w*|Krankschreibung\w*|arbeitsunfähig\w*|AU-Bescheinigung)/i },
+  { id: "condition", category: "health_data", label: "Medical condition", weight: 0.5, pattern: /\b(diabetes|cancer|Krebs\w*|depression|Depressionen?|pregnan\w*|schwanger\w*|HIV|disability|Behinderung)\b/i },
+  { id: "treatment", category: "health_data", label: "Treatment / medication", weight: 0.3, pattern: /\b(medication|Medikament\w*|prescriptions?|therapy|Therapie|surgery|symptoms?|Symptome?|hospital|Krankenhaus)\b/i },
 
   // Marked confidential
   { id: "marked", category: "marked_confidential", label: "Marked confidential / vertraulich", weight: 0.7, pattern: /\b(confidential|vertraulich|streng vertraulich|internal only|nur für den internen Gebrauch|do not forward)\b/i },

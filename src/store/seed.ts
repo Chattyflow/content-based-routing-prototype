@@ -25,7 +25,7 @@ export const PEOPLE: KnownPerson[] = [
 
 const ALL_GREEN: Record<PolicyCategory, "green"> = {
   personal: "green", contract_legal: "green", financial_salary: "green", mna_strategy: "green",
-  code_secrets: "green", security_incident: "green", marked_confidential: "green",
+  code_secrets: "green", security_incident: "green", health_data: "green", marked_confidential: "green",
 };
 
 export const PRESETS: Record<"standard" | "strict" | "lenient", { label: string; policy: Policy }> = {

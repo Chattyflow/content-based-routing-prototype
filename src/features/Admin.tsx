@@ -5,7 +5,7 @@ import { PRESETS, TEAMS } from "../store/seed";
 import { actions } from "../store/store";
 
 const ROWS: { id: PolicyCategory; label: string }[] = [
-  { id: "personal", label: "Personal data (names, emails, phones, IBANs, dates of birth)" },
+  { id: "personal", label: "Personal data (names, emails, phones, IBANs and account numbers, dates of birth)" },
   ...(Object.keys(CATEGORY_INFO) as (keyof typeof CATEGORY_INFO)[]).map((id) => ({ id, label: CATEGORY_INFO[id].label })),
 ];
 

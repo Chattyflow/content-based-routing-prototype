@@ -36,7 +36,7 @@ export interface State extends Saved {
   details: Record<string, RoutingDetail>;
 }
 
-const KEY = "content-based-routing:v2";
+const KEY = "content-based-routing:v3";
 
 function fresh(): Saved {
   return { userId: USERS[0].id, policies: initialPolicies(), audit: seedAudit() };

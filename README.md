@@ -25,7 +25,7 @@ A classifier running on the vendor's infrastructure checks each request first:
 - **Nothing sensitive** → the most capable model.
 - **Unsure** (confidence below the admin threshold) → GREEN: "Unsure, so playing safe."
 
-Routing is fully automatic. Employees see a plain chat: no model selector, no tiers, no model names. They type, the workspace picks a safe destination, and personal data is masked before it leaves and restored in the reply. Admins see every decision with a one-line reason in the **Routing log**. For the demo, **Show admin view** opens the same information next to the chat.
+Routing is fully automatic. Employees see a plain chat: no model selector, no tiers, no model names. They type, the workspace picks a safe destination, and personal data is masked before it leaves and restored in the reply. Admins see every decision with a one-line reason in the **Routing log**. For the demo, **Show admin view** (on by default) shows the same information next to the chat; untick it to see exactly what an employee sees.
 
 ## Run it
 
@@ -51,26 +51,27 @@ npm run build     # type check + production build
 |---|---|
 | Three tiers and the coloured border around the input | **No choice for employees**: every request is routed automatically; the chat shows no tier, model or masking |
 | Manual model selector | Removed for employees; the classifier picks the tier per request |
-| Personal-data masking with preview | **Confidential-content detection**: contracts, salaries and figures, M&A and strategy, code and secrets, incidents, documents marked confidential (English and German). Masking now also covers bank account numbers without a valid IBAN checksum |
+| Personal-data masking with preview | **Confidential-content detection**: contracts, salaries and figures, M&A and strategy, code and secrets, incidents, health and patient data, documents marked confidential (English and German). Masking now also covers bank account numbers without a valid IBAN checksum |
 | Admin approval for RED | **Admin rules per team**: an action per category, a confidence threshold, the RED switch, presets |
 | Audit of AI requests | **Routing log and dashboard**: detected categories (never content), tier, model and reason per request; details for the current session show the rules that fired and what the external model received |
 
 ## 3-minute demo script
 
-1. **Employee view.** As Lena (HR), click the *Supplier contract* sample and send it. A normal answer comes back. There is no model to pick and nothing about tiers.
-2. **Show admin view** (top right of the tabs). The same request stayed on **GREEN**: *"Kept on EU servers: this looks like a confidential contract or legal matter."* The details list the penalty clause, NDA and "confidential" rules that fired.
+1. **Employee view.** Untick **Show admin view**. As Lena (HR), click the *Supplier contract* sample and send it. A normal answer comes back. There is no model to pick and nothing about tiers.
+2. **Show admin view** (tick it again, top right of the tabs). The same request stayed on **GREEN**: *"Kept on EU servers: this looks like a confidential contract or legal matter."* The details list the penalty clause, NDA and "confidential" rules that fired.
 3. **Slogan.** Send *Campaign slogan*: *"Nothing sensitive found: using the most capable model."*
 4. **Customer email.** Send *Customer email*: **ORANGE**, *"Sent to Claude with 1 name and 1 phone number masked."* The admin view shows exactly what Claude received. The employee's answer contains the real name again.
 5. **Bank details.** Type *Here is my IBAN: 97283638882900186538*: the number is masked as `[ACCOUNT_1]` before it leaves, and the employee gets a normal reply.
-6. **Ambiguous note.** Send *Ambiguous internal note*: weak signals only, confidence 32%, below the 70% threshold, so **GREEN**: *"Unsure, so playing safe."*
-7. **Admin rules.** Open **Admin rules** → **HR** → **Strict** (personal data stays on GREEN, threshold 85%). Back in Chat, the customer email now stays on GREEN.
-8. **Routing log.** Every request with its detected categories, tier, model and reason, plus the dashboard: share per tier, sensitive requests kept on EU infrastructure, requests masked, and "unsure, so played safe".
+6. **Patient.** Type *I have a patient named Mr. Ahmed Fakh*: health data is a special category under GDPR, so it stays on **GREEN**. Without the word "patient", the name alone is still found from the title and masked.
+7. **Ambiguous note.** Send *Ambiguous internal note*: weak signals only, confidence 32%, below the 70% threshold, so **GREEN**: *"Unsure, so playing safe."*
+8. **Admin rules.** Open **Admin rules** → **HR** → **Strict** (personal data stays on GREEN, threshold 85%). Back in Chat, the customer email now stays on GREEN.
+9. **Routing log.** Every request with its detected categories, tier, model and reason, plus the dashboard: share per tier, sensitive requests kept on EU infrastructure, requests masked, and "unsure, so played safe".
 
 ## How the classifier works
 
 Simple, deterministic and explainable, so every decision can be traced:
 
-- **Personal data:** regular expressions for emails, phone numbers, IBANs (with checksum), other bank account numbers (labelled, or 12 to 24 digits in a row), dates of birth and tax IDs, plus the names of the demo's fictional people.
+- **Personal data:** regular expressions for emails, phone numbers, IBANs (with checksum), other bank account numbers (labelled, or 12 to 24 digits in a row), dates of birth and tax IDs. Names are found from context: after a title (Mr., Mrs., Dr., Herr, Frau), after cue words ("my name is", "named", "patient", "customer"), or a common first name followed by a surname. The demo's fictional people are always recognised, and every mention of the same person gets the same placeholder.
 - **Confidential content:** weighted keyword and pattern rules per category, in English and German: for example code blocks (+0.4), strings that look like API keys (+0.8), "Vertragsstrafe" (+0.7), "NDA" (+0.6), "Gehalt"/"salary" (+0.6), "merger" (+0.7), "Kündigung" (+0.5). A category's score is the sum of its rules, and it counts as detected from 0.5.
 - **Confidence:** high when a category is clearly detected, or when nothing fires at all. Weak signals that don't add up to a detection give low confidence, and that is when the router plays safe.
 - **Routing:** the strictest admin action among everything detected wins (keep on GREEN, mask for ORANGE, allow any model).

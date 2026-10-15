@@ -18,7 +18,7 @@ const TABS: { id: Tab; label: string }[] = [
 export function App() {
   const s = useStore();
   const [tab, setTab] = useState<Tab>("chat");
-  const [adminView, setAdminView] = useState(false);
+  const [adminView, setAdminView] = useState(true);
   const user = USERS.find((u) => u.id === s.userId) ?? USERS[0];
 
   return (
