@@ -9,21 +9,34 @@ import type { VisitStore } from "../../server/visits.ts";
 declare const Netlify: { env: { toObject(): Record<string, string> } };
 
 // Visits are kept in Netlify Blobs, one small record per visit (see server/visits.ts).
+// The day's random value for visitor codes lives in its own store and is deleted
+// once the day is over.
 function blobVisits(): VisitStore {
   const store = getStore({ name: "visits", consistency: "strong" });
+  const salts = getStore({ name: "visit-salts", consistency: "strong" });
   return {
     add: async (key) => void (await store.set(key, "1")),
     keys: async () => (await store.list()).blobs.map((b) => b.key),
     remove: (key) => store.delete(key),
+    salt: async (day) => {
+      const existing = await salts.get(day, { type: "text" });
+      if (existing) return existing;
+      await salts.set(day, crypto.randomUUID(), { onlyIfNew: true });
+      return (await salts.get(day, { type: "text" })) ?? "";
+    },
+    forgetSalts: async (before) => {
+      for (const b of (await salts.list()).blobs) if (b.key < before) await salts.delete(b.key);
+    },
   };
 }
 
-export default async (req: Request, context: { geo?: { country?: { code?: string } } }): Promise<Response> => {
+export default async (req: Request, context: { ip?: string; geo?: { country?: { code?: string } } }): Promise<Response> => {
   const url = new URL(req.url);
   const visits = url.pathname.startsWith("/api/visit") ? blobVisits() : undefined;
   const r = await handleApi(url.pathname, req.method, req.method === "POST" ? await req.text() : "", Netlify.env.toObject(), {
     country: context?.geo?.country?.code,
     userAgent: req.headers.get("user-agent") ?? "",
+    ip: context?.ip,
     visits,
   });
   return new Response(r.body === null ? null : JSON.stringify(r.body), { status: r.status, headers: r.headers });

@@ -1,5 +1,5 @@
-// Who visited the web app: visits per day and country, without cookies or IP
-// addresses. Shown to admins in the Routing log tab.
+// Who visited the web app: visits and unique visitors per day, plus countries,
+// without cookies. Shown to admins in the Routing log tab.
 
 import { useEffect, useState } from "react";
 import { Users } from "lucide-react";
@@ -13,6 +13,15 @@ const countryName = (code: string) => {
     return code;
   }
 };
+
+function Stat({ value, label }: { value: number; label: string }) {
+  return (
+    <div>
+      <div className="text-2xl font-semibold">{value}</div>
+      <div className="text-xs text-slate-500">{label}</div>
+    </div>
+  );
+}
 
 export function Visitors() {
   const [data, setData] = useState<VisitSummary | null | undefined>(undefined);
@@ -39,17 +48,27 @@ export function Visitors() {
       {data && (
         <>
           <div className="flex flex-wrap gap-6">
-            <div><div className="text-2xl font-semibold">{data.total}</div><div className="text-xs text-slate-500">visits, last {data.windowDays} days</div></div>
-            <div><div className="text-2xl font-semibold">{data.today}</div><div className="text-xs text-slate-500">today</div></div>
-            <div><div className="text-2xl font-semibold">{data.countries.length}</div><div className="text-xs text-slate-500">countries</div></div>
+            <Stat value={data.total} label={`visits, last ${data.windowDays} days`} />
+            <Stat value={data.unique} label={`unique visitors, last ${data.windowDays} days*`} />
+            <Stat value={data.today} label="visits today" />
+            <Stat value={data.todayUnique} label="unique visitors today" />
+            <Stat value={data.countries.length} label="countries" />
           </div>
 
           <div>
-            <div className="mb-1 text-xs text-slate-500">Last 14 days</div>
-            <div className="flex h-24 items-end gap-1" role="img" aria-label={`Visits per day: ${data.daily.map((d) => `${d.date} ${d.visits}`).join(", ")}`}>
+            <div className="mb-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <span>Last 14 days</span>
+              <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-sm bg-indigo-300" aria-hidden /> Visits</span>
+              <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-sm bg-indigo-700" aria-hidden /> Unique visitors</span>
+            </div>
+            <div className="flex h-24 items-end gap-1" role="img"
+              aria-label={`Visits and unique visitors per day: ${data.daily.map((d) => `${d.date} ${d.visits} visits, ${d.unique} unique`).join("; ")}`}>
               {data.daily.map((d) => (
-                <div key={d.date} className="flex flex-1 flex-col items-center gap-1" title={`${d.date}: ${d.visits}`}>
-                  <div className="w-full rounded-t bg-indigo-500" style={{ height: `${(d.visits / max) * 80}px`, minHeight: d.visits ? 3 : 0 }} />
+                <div key={d.date} className="flex flex-1 flex-col items-center gap-1" title={`${d.date}: ${d.visits} visits, ${d.unique} unique visitors`}>
+                  <div className="flex w-full items-end justify-center gap-px">
+                    <div className="w-1/2 rounded-t bg-indigo-300" style={{ height: `${(d.visits / max) * 80}px`, minHeight: d.visits ? 3 : 0 }} />
+                    <div className="w-1/2 rounded-t bg-indigo-700" style={{ height: `${(d.unique / max) * 80}px`, minHeight: d.unique ? 3 : 0 }} />
+                  </div>
                   <span className="text-[9px] text-slate-400">{d.date.slice(8)}</span>
                 </div>
               ))}
@@ -59,13 +78,17 @@ export function Visitors() {
           {data.countries.length > 0 && (
             <ul className="space-y-1 text-sm">
               {data.countries.slice(0, 6).map((c) => (
-                <li key={c.country} className="flex justify-between gap-4"><span>{countryName(c.country)}</span><span className="text-slate-500">{c.visits}</span></li>
+                <li key={c.country} className="flex justify-between gap-4"><span>{countryName(c.country)}</span><span className="text-slate-500">{c.visits} visits</span></li>
               ))}
             </ul>
           )}
         </>
       )}
-      <p className="text-xs text-slate-500">Counted without cookies or IP addresses: one visit per browser session, stored as day and country only. Known bots and scripts are left out.</p>
+      <p className="text-xs text-slate-500">
+        No cookies, and network addresses are never stored. A visit is one browser session. Unique visitors are recognised within a day by a one-way code made from the
+        network address and browser plus a random value that is deleted at the end of the day, so visitors cannot be traced or followed across days.
+        *Unique visitors over several days are the daily figures added up. Known bots and scripts are left out.
+      </p>
     </section>
   );
 }

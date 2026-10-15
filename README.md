@@ -79,7 +79,7 @@ npm run build     # type check + production build
 
 ## Visitors
 
-The **Visitors** card (Routing log tab) shows visits in the last 30 days, per day and per country. It uses no cookies and stores no IP addresses: each browser session sends one ping, and the server keeps only the day, the country (from Netlify) and a random id. Known bots and scripts are left out, and **Don't count my visits on this browser** leaves out your own. Hosted, the records live in Netlify Blobs (`server/visits.ts`, `netlify/functions/api.ts`); locally they are kept in memory until the dev server stops.
+The **Visitors** card (Routing log tab) shows visits and unique visitors for the last 30 days, a 14-day chart of both, and the top countries. It uses no cookies, and network addresses are never stored. A visit is one browser session. Unique visitors are recognised within a day by a one-way code made from the network address and browser plus a random value that is deleted at the end of the day, so visitors cannot be traced back or followed across days; unique visitors over several days are the daily figures added up. Known bots and scripts are left out, and **Don't count my visits on this browser** leaves out your own. Hosted, the records live in Netlify Blobs (`server/visits.ts`, `netlify/functions/api.ts`); locally they are kept in memory until the dev server stops.
 
 ## Messages and calls
 

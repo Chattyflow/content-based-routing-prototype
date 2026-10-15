@@ -114,6 +114,8 @@ const json = (status: number, body: unknown, cors = false): ApiResult => ({
 export interface RequestContext {
   country?: string;
   userAgent?: string;
+  /** Only used, in memory, to recognise the same visitor within a day; never stored. */
+  ip?: string;
   visits?: VisitStore;
 }
 
@@ -124,7 +126,7 @@ export async function handleApi(path: string, method: string, bodyText: string, 
   const isPublic = path === "/api/v1/check";
   if (method === "OPTIONS" && isPublic) return json(204, null, true);
   if (path === "/api/visit" && method === "POST") {
-    const counted = await recordVisit(ctx.visits ?? localVisits, { country: ctx.country, userAgent: ctx.userAgent });
+    const counted = await recordVisit(ctx.visits ?? localVisits, { country: ctx.country, userAgent: ctx.userAgent, ip: ctx.ip });
     return json(200, { counted });
   }
   if (path === "/api/visits") return json(200, await summarizeVisits(ctx.visits ?? localVisits));
