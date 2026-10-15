@@ -14,7 +14,7 @@ import { route } from "../lib/router";
 import { DEMO_PROMPTS, PEOPLE } from "../store/seed";
 import { actions, getState, useStore } from "../store/store";
 
-export function Chat({ user, adminView }: { user: User; adminView: boolean }) {
+export function Chat({ user }: { user: User }) {
   const s = useStore();
   const [text, setText] = useState("");
   const [pending, setPending] = useState<string | null>(null); // sent, being checked
@@ -60,7 +60,7 @@ export function Chat({ user, adminView }: { user: User; adminView: boolean }) {
   };
 
   return (
-    <div className={`flex flex-col gap-4 ${adminView ? "" : "mx-auto max-w-3xl"}`}>
+    <div className="flex min-w-0 flex-col gap-4">
       <ol className="min-h-[40vh] space-y-4" aria-live="polite">
         {items.map((c) => (
           <li key={c.id} className="space-y-2">

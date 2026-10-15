@@ -47,6 +47,14 @@ npm test          # every demo prompt routes as expected, admin rules, masking
 npm run build     # type check + production build
 ```
 
+## Messages and calls
+
+Next to the AI chat, **Messages** is a window for talking to people: colleagues in the organisation and contacts outside it (a supplier, outside counsel, a customer), with presence, unread counts, typing indicators, and voice or video calls.
+
+- Person-to-person messages never go to an AI model.
+- Before something that looks confidential (a contract, salaries, a security incident and so on) goes to an **external** contact, the sender gets a second look: *"This looks like salary or financial information. Erik Sandberg is outside Nordwerk Energie GmbH."* with **Edit message** or **Send anyway**.
+- Prototype limits: there is no messaging or calling server, so the other side's replies and call are simulated (and say so). A video call shows your own camera if the browser allows it. Real calls would need a signalling server, for example WebRTC with a hosted service.
+
 ## Pricing and the API
 
 The **Pricing** tab sells the same engine as an API for other products: plan cards (Developer, Team, Business, Enterprise) with monthly or yearly billing, all marked *Coming soon*, a curl example, a disabled **Login to generate key** button, and a live **Try it** box that runs the rules plus the AI check. Plans and prices live in `src/features/plans.ts`.

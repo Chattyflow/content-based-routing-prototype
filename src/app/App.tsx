@@ -3,6 +3,7 @@ import { RotateCcw, Route } from "lucide-react";
 import { AdminPanel } from "../features/AdminPanel";
 import { Admin } from "../features/Admin";
 import { Chat } from "../features/Chat";
+import { Messenger } from "../features/messenger/Messenger";
 import { Pricing } from "../features/Pricing";
 import { RoutingLog } from "../features/RoutingLog";
 import { TEAMS, USERS } from "../store/seed";
@@ -62,9 +63,12 @@ export function App() {
 
       <main className="px-4 py-6">
         {tab === "chat" && (
-          <div className={adminView ? "mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_380px]" : ""}>
-            <Chat user={user} adminView={adminView} />
-            {adminView && <AdminPanel user={user} />}
+          <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_380px]">
+            <Chat user={user} />
+            <div className="min-w-0 space-y-4">
+              {adminView && <AdminPanel user={user} />}
+              <Messenger user={user} />
+            </div>
           </div>
         )}
         {tab === "admin" && <Admin policies={s.policies} />}
