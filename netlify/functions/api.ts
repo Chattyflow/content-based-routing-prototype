@@ -15,5 +15,5 @@ export default async (req: Request): Promise<Response> => {
 // A public deployment would otherwise let anyone spend the key's model quota.
 export const config = {
   path: "/api/*",
-  rateLimit: { windowLimit: 30, windowSize: 60, aggregateBy: ["ip", "domain"] },
+  rateLimit: { action: "rate_limit", aggregateBy: ["ip", "domain"], windowSize: 60, windowLimit: 30 },
 };
