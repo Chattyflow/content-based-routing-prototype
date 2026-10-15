@@ -82,7 +82,15 @@ const PER_CALL_MS = 20_000;
 // not wait for it again: briefly when busy or slow, longer when it refuses us.
 const COOLDOWN_MS = { busy: 60_000, refused: 10 * 60_000 };
 const cooldownUntil = new Map<string, number>();
-export const resetCooldowns = () => cooldownUntil.clear();
+// When OpenRouter reports the key's daily free-model limit, every model is out:
+// pause all AI calls for a while instead of spending requests on retries.
+const DAILY_LIMIT_PAUSE_MS = 15 * 60_000;
+let pausedUntil = 0;
+const dailyLimitMessage = (reason: string) => `Daily free-model limit reached on this OpenRouter key${reason ? ` (${reason})` : ""}. AI is paused for a while; rules and canned replies are used meanwhile.`;
+export const resetCooldowns = () => {
+  cooldownUntil.clear();
+  pausedUntil = 0;
+};
 
 /**
  * One completion. Free models share rate limits with everyone, so models are
@@ -91,6 +99,7 @@ export const resetCooldowns = () => cooldownUntil.clear();
  */
 async function complete(env: Env, messages: Message[], temperature: number, accept: (content: string) => boolean): Promise<{ content: string; model: string } | { error: string }> {
   const { key, baseUrl, models, spread } = settings(env);
+  if (Date.now() < pausedUntil) return { error: dailyLimitMessage("") };
   const start = Date.now();
   const left = () => BUDGET_MS - (Date.now() - start);
   const cool = (model: string, ms: number) => cooldownUntil.set(model, Date.now() + ms);
@@ -122,6 +131,11 @@ async function complete(env: Env, messages: Message[], temperature: number, acce
           // OpenRouter says why (shared pool busy, daily free limit, ...): keep it for the admin view.
           const detail = await r.text().then((t) => String(JSON.parse(t)?.error?.message ?? "")).catch(() => "");
           if (detail) reason = detail.slice(0, 160);
+          // A daily limit covers every free model on the key: stop, and pause instead of retrying.
+          if (r.status === 429 && /per-day/i.test(detail)) {
+            pausedUntil = Date.now() + DAILY_LIMIT_PAUSE_MS;
+            return { error: dailyLimitMessage(reason) };
+          }
           error = `${model} answered HTTP ${r.status}${detail ? `: ${detail.slice(0, 160)}` : ""}.`;
           if (r.status === 429) {
             busy.push(model);

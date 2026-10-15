@@ -177,3 +177,26 @@ describe("Messages: the other person, played by a model (fake OpenRouter)", () =
     expect((await post("/api/dm", { contactId: "x-erik", me, turns: turns.slice(0, 1) }, env)).status).toBe(400);
   });
 });
+
+describe("daily free-model limit (fake OpenRouter)", () => {
+  const env = { LLM_API_KEY: "test-key" };
+  let calls = 0;
+  beforeEach(() => {
+    resetCooldowns();
+    calls = 0;
+    vi.stubGlobal("fetch", async () => {
+      calls++;
+      return new Response(JSON.stringify({ error: { message: "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day" } }), { status: 429 });
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("stops after one request and pauses, instead of trying every model", async () => {
+    const first = (await post("/api/chat", { messages: [{ role: "user", content: "hi" }] }, env)).body as { status: string; message: string };
+    expect(first.status).toBe("error");
+    expect(first.message).toMatch(/^Daily free-model limit reached on this OpenRouter key/);
+    expect(calls).toBe(1);
+    await post("/api/classify", { text: "hello" }, env);
+    expect(calls).toBe(1); // paused: no further requests
+  });
+});
