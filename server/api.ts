@@ -52,6 +52,8 @@ export const DEFAULT_MODELS = [
   "dots-studio/dots-3-note-preview:free",
   "liquid/lfm-2.5-2.6b:free",
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  // Last resort: OpenRouter's own router picks any free model that is available.
+  "openrouter/free",
 ];
 
 /** Total time for one request: stays inside Netlify's 60-second function limit. */

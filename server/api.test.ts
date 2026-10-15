@@ -92,7 +92,8 @@ describe("model fallback (fake OpenRouter, no network)", () => {
 
   it("ships with the tested free models by default", () => {
     expect(DEFAULT_MODELS.length).toBeGreaterThanOrEqual(8);
-    expect(DEFAULT_MODELS.every((m) => m.endsWith(":free"))).toBe(true);
+    expect(DEFAULT_MODELS.every((m) => m.endsWith(":free") || m === "openrouter/free")).toBe(true);
+    expect(DEFAULT_MODELS.at(-1)).toBe("openrouter/free");
   });
 });
 
