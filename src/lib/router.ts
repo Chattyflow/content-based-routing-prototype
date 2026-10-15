@@ -6,9 +6,9 @@
 //   nothing sensitive             -> the most capable model
 //   confidence below the threshold -> GREEN, "Unsure, so playing safe."
 
-import type { CategoryAction, ConfidentialCategory, Policy, PolicyCategory, Tier } from "../types";
-import { CATEGORY_INFO, type Classification } from "./classifier";
-import type { PiiKind } from "./pii";
+import type { CategoryAction, ConfidentialCategory, Policy, PolicyCategory, Tier } from "../types.ts";
+import { CATEGORY_INFO, type Classification } from "./classifier.ts";
+import type { PiiKind } from "./pii.ts";
 
 export interface Model {
   id: string;

@@ -3,16 +3,18 @@ import { RotateCcw, Route } from "lucide-react";
 import { AdminPanel } from "../features/AdminPanel";
 import { Admin } from "../features/Admin";
 import { Chat } from "../features/Chat";
+import { Pricing } from "../features/Pricing";
 import { RoutingLog } from "../features/RoutingLog";
 import { TEAMS, USERS } from "../store/seed";
 import { actions, useStore } from "../store/store";
 import { Avatar } from "./ui";
 
-type Tab = "chat" | "admin" | "log";
+type Tab = "chat" | "admin" | "log" | "pricing";
 const TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "admin", label: "Admin rules" },
   { id: "log", label: "Routing log" },
+  { id: "pricing", label: "Pricing" },
 ];
 
 export function App() {
@@ -67,6 +69,7 @@ export function App() {
         )}
         {tab === "admin" && <Admin policies={s.policies} />}
         {tab === "log" && <RoutingLog />}
+        {tab === "pricing" && <Pricing />}
       </main>
     </div>
   );

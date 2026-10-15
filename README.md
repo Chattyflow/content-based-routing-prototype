@@ -47,6 +47,28 @@ npm test          # every demo prompt routes as expected, admin rules, masking
 npm run build     # type check + production build
 ```
 
+## Pricing and the API
+
+The **Pricing** tab sells the same engine as an API for other products: plan cards (Developer, Team, Business, Enterprise) with monthly or yearly billing, all marked *Coming soon*, and a live **Try it** box. Plans and prices live in `src/features/plans.ts`.
+
+The API works today, without a key (rules engine only):
+
+```bash
+curl -X POST http://localhost:5173/api/v1/check \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Please call Petra Lindqvist on +49 40 5550 1234"}'
+```
+
+It returns the tier (`green`, `orange` or `red`), a one-line reason, detected categories and personal data, and `masked_text` to send to an external model. An optional `policy` is `standard`, `strict` or `lenient`.
+
+## Host it on Netlify
+
+`netlify.toml` builds the site and deploys `netlify/functions/api.ts`, which serves the same `/api/*` endpoints as the local dev server (`server/api.ts`).
+
+1. Create a Netlify site from this repository (build settings come from `netlify.toml`).
+2. In **Site configuration → Environment variables**, add `LLM_API_KEY` (your OpenRouter key) and optionally `LLM_MODEL`, then redeploy. Without them the site works on the rules and canned replies.
+3. The API is rate-limited to 30 requests per minute per visitor, so a public link cannot use up the key's quota as quickly. Use test data only.
+
 ## Existing vs new
 
 | Existing | New in this prototype |
@@ -80,7 +102,7 @@ Simple, deterministic and explainable, so every decision can be traced:
 - **Answers (optional):** the conversation goes to the model the router chose (here a model on OpenRouter stands in for it). For ORANGE, the new message and earlier turns are masked together, so a person keeps the same placeholder for the whole chat; the reply is unmasked only on the employee's screen. A turn that was kept on GREEN is never sent to an external model later as context.
 - **Routing:** the strictest admin action among everything detected wins (keep on GREEN, mask for ORANGE, allow any model).
 
-Code: `src/lib/classifier.ts`, `src/lib/aiCheck.ts`, `src/lib/router.ts`, `src/lib/conversation.ts` and `server/aiPlugin.ts`, tested in `src/lib/routing.test.ts`, `src/lib/aiCheck.test.ts` and `src/lib/conversation.test.ts`.
+Code: `src/lib/classifier.ts`, `src/lib/aiCheck.ts`, `src/lib/router.ts`, `src/lib/conversation.ts` and `server/api.ts`, tested in `src/lib/routing.test.ts`, `src/lib/aiCheck.test.ts` `src/lib/conversation.test.ts` and `server/api.test.ts`.
 
 ## Success metrics
 

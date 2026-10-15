@@ -1,8 +1,8 @@
 // Fictional organisation, users, team policies, demo prompts and an audit
 // history, so the dashboard has something to show on first load.
 
-import type { AuditEntry, Policy, PolicyCategory, TeamId, Tier, User } from "../types";
-import type { KnownPerson } from "../lib/pii";
+import type { AuditEntry, Policy, PolicyCategory, TeamId, Tier, User } from "../types.ts";
+import type { KnownPerson } from "../lib/pii.ts";
 
 export const ORG = "Nordwerk Energie GmbH";
 
