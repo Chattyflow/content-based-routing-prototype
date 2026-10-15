@@ -6,7 +6,7 @@
 //   POST /api/v1/check { text, policy?, ai? } -> routing decision + masked text (rules; "ai": true adds the AI check)
 //   POST /api/classify { text }          -> AiCheck  (the optional AI check next to the rules)
 //   POST /api/chat     { messages }      -> AiAnswer (a real answer for the chat)
-//   GET  /api/status                     -> { ai: boolean, model }
+//   GET  /api/status                     -> { ai: boolean, models, spread_over }
 
 import { AI_SYSTEM_PROMPT, aiUserMessage, mergeAi, parseAiReply, type AiCheck } from "../src/lib/aiCheck.ts";
 import { CHAT_SYSTEM_PROMPT, type AiAnswer, type ChatMessage } from "../src/lib/aiChat.ts";
@@ -26,22 +26,26 @@ export interface ApiResult {
 const MAX_CHARS = 8000;
 
 function settings(env: Env) {
+  const own = (env.AI_MODEL || env.LLM_MODEL || "").split(",").map((m) => m.trim()).filter(Boolean);
   return {
     // Only your own key. OPENROUTER_API_KEY is deliberately ignored: on Netlify the
     // AI Gateway injects it, and using it would spend the team's Netlify credits.
     key: env.AI_API_KEY || env.LLM_API_KEY || "",
     baseUrl: (env.AI_BASE_URL || env.LLM_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/$/, ""),
-    // Several models, comma-separated: the next one is tried if one fails.
-    models: (env.AI_MODEL || env.LLM_MODEL || DEFAULT_MODELS.join(",")).split(",").map((m) => m.trim()).filter(Boolean),
+    // Several models, comma-separated: requests are spread over all of them.
+    ...(own.length ? { models: own, spread: own.length } : { models: DEFAULT_MODELS, spread: PRIMARY_MODELS.length }),
   };
 }
 
 /**
  * Free OpenRouter models that returned valid JSON for the AI check in a test on
- * 2026-10-15, fast and capable first; small or slow ones last. Free models come
- * and go: see https://openrouter.ai/models?q=free
+ * 2026-10-15. Free models come and go: see https://openrouter.ai/models?q=free
+ *
+ * Each request starts with a random model from the primary pool, so the load is
+ * spread and no single model's free rate limit is hit first. The backups (slow,
+ * small, or a router) are tried only when the pool is busy.
  */
-export const DEFAULT_MODELS = [
+export const PRIMARY_MODELS = [
   "nvidia/nemotron-3-super-120b-a12b:free",
   "cohere/north-mini-code:free",
   "poolside/laguna-s-2.1:free",
@@ -49,12 +53,24 @@ export const DEFAULT_MODELS = [
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
   "poolside/laguna-xs-2.1:free",
+];
+export const BACKUP_MODELS = [
   "dots-studio/dots-3-note-preview:free",
   "liquid/lfm-2.5-2.6b:free",
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
   // Last resort: OpenRouter's own router picks any free model that is available.
   "openrouter/free",
 ];
+export const DEFAULT_MODELS = [...PRIMARY_MODELS, ...BACKUP_MODELS];
+
+function shuffled<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
 /** Total time for one request: stays inside Netlify's 60-second function limit. */
 const BUDGET_MS = 40_000;
@@ -71,12 +87,14 @@ export const resetCooldowns = () => cooldownUntil.clear();
  * time allows.
  */
 async function complete(env: Env, messages: Message[], temperature: number, accept: (content: string) => boolean): Promise<{ content: string; model: string } | { error: string }> {
-  const { key, baseUrl, models } = settings(env);
+  const { key, baseUrl, models, spread } = settings(env);
   const start = Date.now();
   const left = () => BUDGET_MS - (Date.now() - start);
   const cool = (model: string, ms: number) => cooldownUntil.set(model, Date.now() + ms);
-  const ready = models.filter((m) => (cooldownUntil.get(m) ?? 0) <= Date.now());
-  let queue = [...ready, ...models.filter((m) => !ready.includes(m))];
+  // Random start within the pool spreads the load; models cooling down go last.
+  const order = [...shuffled(models.slice(0, spread)), ...models.slice(spread)];
+  const ready = order.filter((m) => (cooldownUntil.get(m) ?? 0) <= Date.now());
+  let queue = [...ready, ...order.filter((m) => !ready.includes(m))];
   let error = "No model answered.";
   let tried = 0;
   let busyCount = 0;
@@ -188,7 +206,7 @@ export async function handleApi(path: string, method: string, bodyText: string, 
   if (method === "OPTIONS" && isPublic) return json(204, null, true);
   if (path === "/api/status") {
     const s = settings(env);
-    return json(200, { ai: Boolean(s.key), model: s.models[0] });
+    return json(200, { ai: Boolean(s.key), models: s.models, spread_over: s.models.slice(0, s.spread) });
   }
   if (method !== "POST") return json(405, { error: "Use POST." }, isPublic);
 

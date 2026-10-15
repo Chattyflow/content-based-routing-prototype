@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_MODELS, handleApi, resetCooldowns } from "./api.ts";
+import { BACKUP_MODELS, DEFAULT_MODELS, PRIMARY_MODELS, handleApi, resetCooldowns } from "./api.ts";
 
 const post = (path: string, body: unknown, env = {}) => handleApi(path, "POST", JSON.stringify(body), env);
 
@@ -56,8 +56,12 @@ describe("model fallback (fake OpenRouter, no network)", () => {
   beforeEach(() => {
     resetCooldowns();
     calls = [];
+    vi.spyOn(Math, "random").mockReturnValue(0.9999); // keep the listed order, so the steps are predictable
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   it("moves on from a busy model and skips it on the next request", async () => {
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
@@ -88,6 +92,25 @@ describe("model fallback (fake OpenRouter, no network)", () => {
     });
     expect((await chat()).body).toEqual({ status: "error", message: "OpenRouter rejected the API key (HTTP 401)." });
     expect(calls).toHaveLength(1);
+  });
+
+  it("spreads requests over the primary pool and keeps backups for when it is busy", async () => {
+    vi.restoreAllMocks(); // real randomness for this one
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      calls.push(JSON.parse(String(init.body)).model);
+      return answer("ok");
+    });
+    for (let i = 0; i < 40; i++) await post("/api/chat", { messages: [{ role: "user", content: "hi" }] }, { LLM_API_KEY: "test-key" });
+    const firstPicks = new Set(calls);
+    expect(firstPicks.size).toBeGreaterThan(3);
+    expect([...firstPicks].every((m) => PRIMARY_MODELS.includes(m))).toBe(true);
+    expect([...firstPicks].some((m) => BACKUP_MODELS.includes(m))).toBe(false);
+  });
+
+  it("lists all models and the pool in /api/status", async () => {
+    const body = (await handleApi("/api/status", "GET", "", { LLM_API_KEY: "k" })).body as { models: string[]; spread_over: string[] };
+    expect(body.models).toEqual(DEFAULT_MODELS);
+    expect(body.spread_over).toEqual(PRIMARY_MODELS);
   });
 
   it("ships with the tested free models by default", () => {
