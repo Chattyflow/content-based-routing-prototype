@@ -48,7 +48,7 @@ export const DEFAULT_MODELS = [...PRIMARY_MODELS, ...BACKUP_MODELS];
  */
 export const BACKUP_PROVIDERS = [
   { id: "groq", name: "Groq", keyVar: "GROQ_API_KEY", modelVar: "GROQ_MODEL", baseUrl: "https://api.groq.com/openai/v1",
-    models: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "llama-3.1-8b-instant"] },
+    models: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"] }, // gpt-oss-120b verified live on 2026-10-15
   { id: "cerebras", name: "Cerebras", keyVar: "CEREBRAS_API_KEY", modelVar: "CEREBRAS_MODEL", baseUrl: "https://api.cerebras.ai/v1",
     models: ["gpt-oss-120b", "llama3.1-8b"] },
   { id: "google", name: "Google AI Studio", keyVar: "GOOGLE_AI_STUDIO_KEY", modelVar: "GOOGLE_AI_STUDIO_MODEL", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
