@@ -27,9 +27,18 @@ A classifier running on the vendor's infrastructure checks each request first:
 
 Routing is fully automatic. Employees see a plain chat: no model selector, no tiers, no model names. They type, the workspace picks a safe destination, and personal data is masked before it leaves and restored in the reply. Admins see every decision with a one-line reason in the **Routing log**. For the demo, **Show admin view** (on by default) shows the same information next to the chat; untick it to see exactly what an employee sees.
 
-## Run it
+## What's in the app
 
-Needs [git](https://git-scm.com/downloads) and [Node.js](https://nodejs.org) 22 or newer. No backend, accounts or API keys.
+- **Chat**: the employee's AI chat. No model choice; every request is routed automatically.
+- **Show admin view** (on by default): next to the chat, how each request was routed and why.
+- **Messages**: chat and voice/video calls with colleagues and external contacts.
+- **Admin rules**: per team, what happens to each kind of content, with presets.
+- **Routing log**: every request's detected categories, tier and reason (never the content), with a dashboard.
+- **Pricing**: the same engine as an API for other products, with plans (all *Coming soon*) and a live **Try it** box.
+
+## Run it locally
+
+Needs [git](https://git-scm.com/downloads) and [Node.js](https://nodejs.org) 22 or newer. Works without any account or API key.
 
 ```bash
 git clone https://github.com/Chattyflow/content-based-routing-prototype.git
@@ -38,12 +47,31 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. All data is fictional.
+Open http://localhost:5173. All people, companies and data are fictional. **Reset demo** (top right of the tabs) puts the rules, the chat and the routing log back to the start.
 
-**Optional real AI.** To let a language model check each request next to the rules, and to get real chat answers instead of the canned demo replies, copy `.env.example` to `.env` and add an [OpenRouter](https://openrouter.ai) key, then restart `npm run dev`. The key stays in `.env` on your machine (gitignored) and is used only by the local dev server, never in the browser. Without a key, everything works on the rules and canned replies. Use test data only: messages go to the model. Free models (`:free`) share rate limits with everyone, so the app uses 11 of them (`server/api.ts`): each request starts with a random model from a pool of 7 fast, capable ones, which spreads the load, and 4 backups (slower or smaller models, then OpenRouter's own free router `openrouter/free`) step in when the pool is busy. Your own comma-separated `LLM_MODEL` replaces the list. A model that is busy is tried last for the next minute; if all are busy, the admin view says so and the canned reply stands in. **Reset demo** (top right of the tabs) puts the rules and the routing log back to the start.
+Without a key, routing and masking run on the built-in rules, the chat and Messages use canned replies, and the admin view says "AI check: Off".
+
+### Optional: real AI with an OpenRouter key
+
+This turns on the AI check next to the rules, real answers in the chat, and realistic replies in Messages.
+
+1. Create a key at https://openrouter.ai/keys.
+2. Copy the example settings file:
+   - macOS / Linux: `cp .env.example .env`
+   - Windows (PowerShell): `Copy-Item .env.example .env`
+3. Open `.env` and put your key after `LLM_API_KEY=`.
+4. Stop `npm run dev` (Ctrl+C) and start it again.
+
+The key stays in `.env` on your machine (gitignored) and is used only by the local server, never in the browser. Use test data only: messages go to the model.
+
+The app uses free OpenRouter models (`server/api.ts`): each request starts with a random model from a pool of 7, which spreads the load, and 4 backups (slower or smaller models, then OpenRouter's free router `openrouter/free`) step in when the pool is busy. A busy model is tried last for the next minute. To use your own models, set a comma-separated `LLM_MODEL` in `.env`.
+
+Free models have limits: they are shared with everyone, and OpenRouter caps free-model requests per key per day. When the daily cap is reached, the app stops asking for 15 minutes and uses the rules and canned replies; the admin view shows OpenRouter's message. Each chat message uses two requests (check and answer), each Messages reply one.
+
+### Tests and build
 
 ```bash
-npm test          # every demo prompt routes as expected, admin rules, masking
+npm test          # routing of every demo prompt, masking, admin rules, AI merge, API, model fallback (no network)
 npm run build     # type check + production build
 ```
 
@@ -101,7 +129,8 @@ Netlify's AI Gateway injects its own `OPENROUTER_API_KEY` into every site. The a
 6. **Patient.** Type *I have a patient named Mr. Ahmed Fakh*: health data is a special category under GDPR, so it stays on **GREEN**. Without the word "patient", the name alone is still found from the title and masked.
 7. **Ambiguous note.** Send *Ambiguous internal note*: weak signals only, confidence 32%, below the 70% threshold, so **GREEN**: *"Unsure, so playing safe."*
 8. **Admin rules.** Open **Admin rules** → **HR** → **Strict** (personal data stays on GREEN, threshold 85%). Back in Chat, the customer email now stays on GREEN.
-9. **Routing log.** Every request with its detected categories, tier, model and reason, plus the dashboard: share per tier, sensitive requests kept on EU infrastructure, requests masked, and "unsure, so played safe".
+9. **Messages.** Open *Erik Sandberg* (an external supplier) and type a salary overview: before it leaves, *"This looks like salary or financial information. Erik Sandberg is outside Nordwerk Energie GmbH."* Then send a normal message and get a reply in character; try a video call.
+10. **Routing log.** Every request with its detected categories, tier, model and reason, plus the dashboard: share per tier, sensitive requests kept on EU infrastructure, requests masked, and "unsure, so played safe".
 
 ## How the classifier works
 
@@ -114,7 +143,28 @@ Simple, deterministic and explainable, so every decision can be traced:
 - **Answers (optional):** the conversation goes to the model the router chose (here a model on OpenRouter stands in for it). For ORANGE, the new message and earlier turns are masked together, so a person keeps the same placeholder for the whole chat; the reply is unmasked only on the employee's screen. A turn that was kept on GREEN is never sent to an external model later as context.
 - **Routing:** the strictest admin action among everything detected wins (keep on GREEN, mask for ORANGE, allow any model).
 
-Code: `src/lib/classifier.ts`, `src/lib/aiCheck.ts`, `src/lib/router.ts`, `src/lib/conversation.ts` and `server/api.ts`, tested in `src/lib/routing.test.ts`, `src/lib/aiCheck.test.ts` `src/lib/conversation.test.ts` and `server/api.test.ts`.
+Code: `src/lib/classifier.ts`, `src/lib/aiCheck.ts`, `src/lib/router.ts`, `src/lib/conversation.ts` and `server/api.ts`, tested in `src/lib/routing.test.ts`, `src/lib/aiCheck.test.ts`, `src/lib/conversation.test.ts` and `server/api.test.ts`.
+
+## Project structure
+
+```text
+src/app/            App shell, tabs and shared UI
+src/features/       Chat, admin view, admin rules, routing log, pricing
+src/features/messenger/  Messages and calls (contacts, personas, call window)
+src/lib/            Classifier, personal-data masking, router, AI check, conversation building
+src/store/          Fictional organisation, demo prompts, team policies, app state
+server/api.ts       The server side: /api/v1/check, /api/classify, /api/chat, /api/dm, /api/status
+server/aiPlugin.ts  Serves server/api.ts from the local dev server
+netlify/functions/  Serves server/api.ts on Netlify
+```
+
+## Troubleshooting
+
+- **"AI check: Off" in the admin view**: no key in `.env`, or the dev server was not restarted after adding it.
+- **"OpenRouter rejected the API key"**: the key in `.env` is wrong or was deleted; create a new one.
+- **"Daily free-model limit reached"**: the key used up its free requests for the day. Wait for OpenRouter's reset, or see OpenRouter's message for options.
+- **Video call says "Camera not available"**: the browser blocked the camera; allow it for the site.
+- **Port 5173 in use**: Vite picks the next free port and prints the address.
 
 ## Success metrics
 
